@@ -207,9 +207,9 @@ const seedCategories = () => {
     if (err) return;
     if (row.count === 0) {
       const categories = [
-        { name: 'Wedding Collection', description: 'Premium silk sarees for weddings and celebrations', image_url: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=400' },
-        { name: 'Silk Collection', description: 'Elegant pure silk sarees', image_url: 'https://images.unsplash.com/photo-1611800066692-35d4f676d779?w=400' },
-        { name: 'Cotton Collection', description: 'Comfortable everyday cotton sarees', image_url: 'https://images.unsplash.com/photo-1621284342245-b3d7f8b2f10a?w=400' }
+        { name: 'Paithani Collection', description: 'Authentic handwoven Paithani sarees from Yeola, Maharashtra', image_url: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=400' },
+        { name: 'Banarasi Collection', description: 'Luxurious Banarasi silk sarees with intricate zari work', image_url: 'https://images.unsplash.com/photo-1611800066692-35d4f676d779?w=400' },
+        { name: 'Kanjivaram Collection', description: 'Royal Kanjivaram silk sarees for grand occasions', image_url: 'https://images.unsplash.com/photo-1621284342245-b3d7f8b2f10a?w=400' }
       ];
       const stmt = db.prepare('INSERT INTO categories (name, description, image_url) VALUES (?, ?, ?)');
       categories.forEach((c) => stmt.run(c.name, c.description, c.image_url));
@@ -226,53 +226,53 @@ const seedProducts = () => {
     if (row.count === 0) {
       const samples = [
         {
-          name: 'Banarasi Silk Saree',
-          description: 'Handwoven pure silk saree with intricate gold zari work. Perfect for weddings and special occasions.',
-          price: 249.99,
-          sale_price: 199.99,
-          fabric: 'Pure Silk',
-          color: 'Maroon & Gold',
+          name: 'Kali Paithani Silk Saree',
+          description: 'Classic black Paithani saree with exquisite golden zari and traditional peacock motif. Handwoven by master artisans in Yeola, Maharashtra.',
+          price: 24999,
+          sale_price: 19999,
+          fabric: 'Pure Silk Paithani',
+          color: 'Black & Gold',
           size: 'U (6.3 m)',
-          category: 'Wedding Collection',
+          category: 'Paithani Collection',
           image_url: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=600',
           stock: 15,
           is_featured: 1
         },
         {
-          name: 'Tussar Silk Saree',
-          description: 'Elegant raw silk saree with a rich, textured look. Lightweight and comfortable for daily elegant wear.',
-          price: 89.99,
+          name: 'Green Paithani Saree',
+          description: 'Elegant emerald green Paithani saree with rich golden border and traditional Mogul-inspired motifs. Lightweight pure silk for grand occasions.',
+          price: 18999,
           sale_price: null,
-          fabric: 'Tussar Silk',
-          color: 'Earthy Brown',
+          fabric: 'Pure Silk Paithani',
+          color: 'Emerald Green & Gold',
           size: 'U (6.3 m)',
-          category: 'Silk Collection',
+          category: 'Paithani Collection',
           image_url: 'https://images.unsplash.com/photo-1611800066692-35d4f676d779?w=600',
           stock: 20,
           is_featured: 0
         },
         {
-          name: 'Cotton Chanderi Saree',
-          description: 'Breathable cotton saree with subtle sheen. Ideal for everyday wear and summer occasions.',
-          price: 49.99,
-          sale_price: 39.99,
-          fabric: 'Cotton Chanderi',
-          color: 'Sky Blue',
+          name: 'Red Bridal Paithani Saree',
+          description: 'Stunning deep red Paithani saree with authentic gold zari pallu and peacock ornamentation. The perfect choice for weddings and festivals.',
+          price: 34999,
+          sale_price: 27999,
+          fabric: 'Pure Silk Paithani',
+          color: 'Deep Red & Gold',
           size: 'U (6.3 m)',
-          category: 'Cotton Collection',
+          category: 'Paithani Collection',
           image_url: 'https://images.unsplash.com/photo-1621284342245-b3d7f8b2f10a?w=600',
-          stock: 30,
+          stock: 10,
           is_featured: 1
         },
         {
-          name: 'Kanjivaram Silk Saree',
-          description: 'Royal Kanjivaram silk saree in rich teal with traditional gold border. A timeless classic.',
-          price: 349.99,
-          sale_price: 299.99,
-          fabric: 'Kanjivaram Silk',
-          color: 'Teal & Gold',
+          name: 'Banarasi Silk Saree',
+          description: 'Handwoven Banarasi silk saree with intricate gold zari and exquisite brocade work. A timeless wedding classic.',
+          price: 32999,
+          sale_price: 29999,
+          fabric: 'Pure Silk Banarasi',
+          color: 'Maroon & Gold',
           size: 'U (6.3 m)',
-          category: 'Wedding Collection',
+          category: 'Banarasi Collection',
           image_url: 'https://images.unsplash.com/photo-1605080717378-21f427417f23?w=600',
           stock: 8,
           is_featured: 0

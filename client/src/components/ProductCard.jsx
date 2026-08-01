@@ -3,7 +3,7 @@ import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 
 function formatPrice(price) {
-  return `$${Number(price).toFixed(2)}`
+  return `₹${Number(price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
 }
 
 export default function ProductCard({ product }) {

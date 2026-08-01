@@ -44,7 +44,7 @@ export default function Footer() {
             <ul className="space-y-2 text-sm">
               <li>📞 +91 98765 43210</li>
               <li>📧 support@swaranjalisarees.com</li>
-              <li>📍 Mumbai, Maharashtra, India</li>
+              <li>📍 Yeola, Maharashtra, India</li>
             </ul>
           </div>
         </div>

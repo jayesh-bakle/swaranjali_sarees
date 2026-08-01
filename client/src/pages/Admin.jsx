@@ -351,11 +351,11 @@ export default function Admin() {
                       <td className="px-4 py-3 font-medium">
                         {p.sale_price ? (
                           <div>
-                            <span>${Number(p.sale_price).toFixed(2)}</span>
-                            <span className="block text-xs text-slate-400 line-through">${Number(p.price).toFixed(2)}</span>
+                            <span>₹{Number(p.sale_price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                            <span className="block text-xs text-slate-400 line-through">₹{Number(p.price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                           </div>
                         ) : (
-                          `$${Number(p.price).toFixed(2)}`
+                          `₹${Number(p.price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -437,7 +437,7 @@ export default function Admin() {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 font-medium">${Number(o.total).toFixed(2)}</td>
+                  <td className="px-4 py-3 font-medium">₹{Number(o.total).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
                       o.payment_status === 'paid' ? 'bg-green-100 text-green-700' :
@@ -508,7 +508,7 @@ function OverviewPanel({ stats, orders, products, trend, setActiveTab }) {
   const outOfStock = (products || []).filter((p) => p.stock === 0).length
 
   const cards = [
-    { label: 'Total Revenue', value: `$${Number(grossRevenue).toFixed(2)}`, icon: '💰', color: 'bg-green-50 text-green-700' },
+    { label: 'Total Revenue', value: `₹${Number(grossRevenue).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, icon: '💰', color: 'bg-green-50 text-green-700' },
     { label: 'Total Orders', value: (orders || []).length, icon: '📋', color: 'bg-blue-50 text-blue-700' },
     { label: 'Products', value: (products || []).length, icon: '📦', color: 'bg-purple-50 text-purple-700' },
     { label: 'Low Stock', value: lowStock, icon: '⚠️', color: 'bg-amber-50 text-amber-700' },
@@ -543,11 +543,11 @@ function OverviewPanel({ stats, orders, products, trend, setActiveTab }) {
             <div className="flex items-end gap-3 h-40">
               {trend.map((t) => (
                 <div key={t.month} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-[10px] text-slate-500 font-medium">${Number(t.revenue).toFixed(0)}</span>
+                  <span className="text-[10px] text-slate-500 font-medium">₹{Number(t.revenue).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                   <div
                     className={`w-full rounded-t-lg ${Number(t.revenue) > 0 ? 'bg-primary-500' : 'bg-slate-100'}`}
                     style={{ height: `${Math.max(4, Number(t.revenue) > 0 ? (Number(t.revenue) / Math.max(...trend.map((x) => Number(x.revenue)), 1)) * 112 : 4)}px` }}
-                    title={`${t.month}: $${Number(t.revenue).toFixed(2)} (${t.orders} orders)`}
+                    title={`${t.month}: ₹${Number(t.revenue).toLocaleString('en-IN', { maximumFractionDigits: 0 })} (${t.orders} orders)`}
                   />
                   <span className="text-[10px] text-slate-400">{t.month.slice(5)}</span>
                 </div>
@@ -605,7 +605,7 @@ function OverviewPanel({ stats, orders, products, trend, setActiveTab }) {
               <tr key={o.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3 font-medium">#{o.id}</td>
                 <td className="px-4 py-3">{o.customer_name || `User #${o.user_id}`}</td>
-                <td className="px-4 py-3 font-medium">${Number(o.total).toFixed(2)}</td>
+                <td className="px-4 py-3 font-medium">₹{Number(o.total).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                 <td className="px-4 py-3">
                   <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[o.status] || STATUS_BADGE.pending}`}>
                     {o.status.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
@@ -643,7 +643,7 @@ function InventoryPanel({ inventory }) {
         </div>
         <div className="bg-white rounded-xl shadow-soft p-4">
           <p className="text-xs text-slate-500">Total Stock Value</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">${Number(totalValue).toFixed(2)}</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">₹{Number(totalValue).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
         </div>
         <div className="bg-white rounded-xl shadow-soft p-4">
           <p className="text-xs text-slate-500">Low Stock Items</p>
@@ -678,13 +678,13 @@ function InventoryPanel({ inventory }) {
                   </div>
                 </td>
                 <td className="px-4 py-3">{p.category || 'Uncategorized'}</td>
-                <td className="px-4 py-3">${Number(p.price).toFixed(2)}</td>
+                <td className="px-4 py-3">₹{Number(p.price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                 <td className="px-4 py-3">
                   <span className={`font-semibold ${p.stock === 0 ? 'text-red-600' : p.stock <= 5 ? 'text-amber-600' : 'text-slate-800'}`}>{p.stock}</span>
                   {p.stock === 0 && <span className="ml-2 text-xs font-medium text-red-600">OUT</span>}
                   {p.stock <= 5 && p.stock > 0 && <span className="ml-2 text-xs font-medium text-amber-600">LOW</span>}
                 </td>
-                <td className="px-4 py-3 font-medium">${(Number(p.stock) * Number(p.price)).toFixed(2)}</td>
+                <td className="px-4 py-3 font-medium">₹{Number(Number(p.stock) * Number(p.price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                 <td className="px-4 py-3">
                   {p.avg_rating ? (
                     <span className="text-amber-500 font-medium">★ {Number(p.avg_rating).toFixed(1)}</span>
@@ -724,12 +724,12 @@ function CustomersPanel({ users }) {
         </div>
         <div className="bg-white rounded-xl shadow-soft p-4">
           <p className="text-xs text-slate-500">Customer Revenue</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">${Number(totalRevenue).toFixed(2)}</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">₹{Number(totalRevenue).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
         </div>
         <div className="bg-white rounded-xl shadow-soft p-4">
           <p className="text-xs text-slate-500">Avg Spend / Customer</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">
-            ${totalCustomers ? (totalRevenue / totalCustomers).toFixed(2) : '0.00'}
+            ₹{totalCustomers ? Number(totalRevenue / totalCustomers).toLocaleString('en-IN', { maximumFractionDigits: 0 }) : '0'}
           </p>
         </div>
       </div>
@@ -758,7 +758,7 @@ function CustomersPanel({ users }) {
                 </td>
                 <td className="px-4 py-3 text-slate-600">{u.email}</td>
                 <td className="px-4 py-3">{u.order_count || 0}</td>
-                <td className="px-4 py-3 font-medium">${Number(u.total_spent || 0).toFixed(2)}</td>
+                <td className="px-4 py-3 font-medium">₹{Number(u.total_spent || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                 <td className="px-4 py-3 text-slate-500">{new Date(u.created_at).toLocaleDateString()}</td>
               </tr>
             ))}

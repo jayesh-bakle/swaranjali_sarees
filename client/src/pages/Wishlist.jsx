@@ -132,9 +132,9 @@ export default function Wishlist() {
               </Link>
               <p className="text-xs text-slate-500 mt-1">{item.fabric} · {item.color}</p>
               <div className="flex items-center gap-2 mt-2">
-                <span className="font-semibold text-primary-700">${(item.sale_price || item.price).toFixed(2)}</span>
+                <span className="font-semibold text-primary-700">₹{Number(item.sale_price || item.price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                 {item.sale_price && (
-                  <span className="text-xs text-slate-400 line-through">${item.price.toFixed(2)}</span>
+                  <span className="text-xs text-slate-400 line-through">₹{Number(item.price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                 )}
               </div>
               <button onClick={() => moveToCart(item)} className="btn-primary w-full mt-3 text-sm py-2">

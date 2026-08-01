@@ -216,11 +216,11 @@ export default function Orders() {
                         <span> · Qty: {item.quantity}</span>
                       </p>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        ${Number(item.price).toFixed(2)} each
+                        ₹{Number(item.price).toLocaleString('en-IN', { maximumFractionDigits: 0 })} each
                       </p>
                     </div>
                     <span className="text-sm font-semibold text-slate-800">
-                      ${(item.price * item.quantity).toFixed(2)}
+                      ₹{Number(item.price * item.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                     </span>
                   </div>
                 ))}
@@ -264,7 +264,7 @@ export default function Orders() {
                   <div className="flex items-center gap-4">
                     <div className="text-right">
                       <p className="text-xs text-slate-500">Order Total</p>
-                      <p className="text-xl font-bold text-primary-700">${Number(order.total).toFixed(2)}</p>
+                      <p className="text-xl font-bold text-primary-700">₹{Number(order.total).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                     </div>
                     <div className="flex gap-2">
                       <Link to={`/track-order/${order.id}`} className="btn-secondary text-sm py-2">

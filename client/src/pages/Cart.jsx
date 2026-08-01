@@ -144,11 +144,11 @@ export default function Cart() {
 
                   <div className="text-right">
                     <span className="font-semibold text-primary-700">
-                      ${(item.price * item.quantity).toFixed(2)}
+                      ₹{Number(item.price * item.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                     </span>
                     {item.originalPrice > item.price && (
                       <p className="text-xs text-slate-400 line-through">
-                        ${(item.originalPrice * item.quantity).toFixed(2)}
+                        ₹{Number(item.originalPrice * item.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                       </p>
                     )}
                   </div>
@@ -166,7 +166,7 @@ export default function Cart() {
             <div className="space-y-2 text-sm mb-4">
               <div className="flex justify-between">
                 <span className="text-slate-500">Items ({totalItems})</span>
-                <span className="font-medium">${totalPrice.toFixed(2)}</span>
+                <span className="font-medium">₹{Number(totalPrice).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Shipping</span>
@@ -175,7 +175,7 @@ export default function Cart() {
               {savings > 0 && (
                 <div className="flex justify-between text-green-600">
                   <span>You Save</span>
-                  <span className="font-bold">-${savings.toFixed(2)}</span>
+                  <span className="font-bold">-₹{Number(savings).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                 </div>
               )}
             </div>
@@ -183,7 +183,7 @@ export default function Cart() {
             <div className="border-t border-slate-100 pt-4 mb-6">
               <div className="flex justify-between items-center">
                 <span className="font-semibold text-slate-800">Total</span>
-                <span className="text-2xl font-bold text-primary-700">${totalPrice.toFixed(2)}</span>
+                <span className="text-2xl font-bold text-primary-700">₹{Number(totalPrice).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
               </div>
             </div>
 

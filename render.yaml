@@ -1,10 +1,10 @@
-# Render Blueprint — one-click deploy of SareeElegance backend + frontend
+# Render Blueprint — one-click deploy of Swaranjali Sarees backend + frontend
 # Docs: https://render.com/docs/blueprint-spec
 
 services:
   # ── Backend API ──────────────────────────────────────────────
   - type: web
-    name: saree-elegance-server
+    name: swaranjali-server
     runtime: node
     rootDir: server
     plan: free
@@ -24,11 +24,11 @@ services:
 
   # ── Frontend (static SPA) ────────────────────────────────────
   - type: web
-    name: saree-elegance-client
+    name: swaranjali-client
     runtime: static
     rootDir: client
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
     envVars:
       - key: VITE_API_URL
-        value: https://saree-elegance-server.onrender.com/api
+        value: https://swaranjali-server.onrender.com/api

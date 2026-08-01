@@ -39,22 +39,22 @@ export default function Home() {
         <div className="container-app py-20 lg:py-28 relative z-10">
           <div className="max-w-2xl">
             <p className="text-gold-400 font-medium mb-3 uppercase tracking-widest text-sm">
-              Handpicked · Authentic · Premium
+              Handpicked · Authentic · Handwoven
             </p>
             <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight mb-6">
-              Drape Yourself in
-              <span className="block text-gold-400">Timeless Elegance</span>
+              Authentic Paithani
+              <span className="block text-gold-400">Silk Sarees</span>
             </h1>
             <p className="text-lg text-primary-100 mb-8 max-w-xl">
-              Discover a curated collection of handwoven sarees — from luxurious Banarasi silks to
-              breezy cotton weaves, crafted by artisans across India.
+              Discover our exclusive collection of genuine handwoven Paithani silk sarees —
+              crafted by master weavers of Yeola, Maharashtra, with traditional gold zari.
             </p>
             <div className="flex flex-wrap gap-4">
               <Link to="/shop" className="btn-gold text-lg px-8 py-3">
                 Shop Collection
               </Link>
-              <Link to="/login" className="btn bg-white/10 hover:bg-white/20 text-lg px-8 py-3 backdrop-blur">
-                Become a Member
+              <Link to="/shop?category=Traditional%20Paithani" className="btn bg-white/10 hover:bg-white/20 text-lg px-8 py-3 backdrop-blur">
+                Explore Paithani
               </Link>
             </div>
           </div>
@@ -94,9 +94,9 @@ export default function Home() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             {[
-              { name: 'Wedding Collection', icon: '💍', desc: 'Banarasi & Kanjivaram silks', color: 'from-amber-500 to-yellow-600' },
-              { name: 'Silk Collection', icon: '✨', desc: 'Tussar & pure silks', color: 'from-primary-500 to-primary-700' },
-              { name: 'Cotton Collection', icon: '🌿', desc: 'Chanderi & everyday wear', color: 'from-emerald-500 to-teal-600' },
+              { name: 'Traditional Paithani', icon: '🏵️', desc: 'Classic handwoven pure silk with gold zari', color: 'from-amber-500 to-yellow-600' },
+              { name: 'Designer Paithani', icon: '✨', desc: 'Contemporary motifs in pure silk', color: 'from-primary-500 to-primary-700' },
+              { name: 'Paithani Dupattas', icon: '🌸', desc: 'Elegant silk stoles & dupattas', color: 'from-emerald-500 to-teal-600' },
             ].map((cat, i) => (
               <Link
                 key={i}
@@ -136,7 +136,7 @@ export default function Home() {
         )}
       </section>
 
-      {/* CTA Banner */}
+      {/* Craftsmanship Banner */}
       <section className="container-app pb-16">
         <div className="bg-slate-900 rounded-2xl p-12 text-center text-white relative overflow-hidden">
           <div className="absolute inset-0 opacity-10">
@@ -144,13 +144,13 @@ export default function Home() {
             <div className="absolute bottom-0 right-1/4 w-48 h-48 rounded-full bg-primary-500"></div>
           </div>
           <h2 className="font-display text-3xl font-semibold mb-3 relative z-10">
-            Are you a Saree Seller?
+            The Art of Authentic Paithani
           </h2>
           <p className="text-slate-300 mb-6 max-w-lg mx-auto relative z-10">
-            Upload your saree photos and start selling online within minutes. Join our community of artisans and boutique owners.
+            Every saree is handwoven on traditional pit looms in Yeola, Maharashtra — using pure silk and genuine gold zari, just as it has been for over 2000 years.
           </p>
-          <Link to="/login" className="btn-gold relative z-10 text-lg px-8 py-3">
-            Start Selling Today
+          <Link to="/shop" className="btn-gold relative z-10 text-lg px-8 py-3">
+            Shop Authentic Paithani
           </Link>
         </div>
       </section>

@@ -223,7 +223,7 @@ export default function TrackOrder() {
           <div className="mt-4 flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg p-4">
             <div>
               <p className="text-sm font-medium text-amber-800">Complete your payment</p>
-              <p className="text-xs text-amber-700 mt-0.5">Pay ${order.total.toFixed(2)} now to confirm your order</p>
+              <p className="text-xs text-amber-700 mt-0.5">Pay ₹{Number(order.total).toLocaleString('en-IN', { maximumFractionDigits: 0 })} now to confirm your order</p>
             </div>
             <button
               onClick={handlePayNow}
@@ -317,7 +317,7 @@ export default function TrackOrder() {
                     </>
                   )}
                   <p className={`font-medium ${payment.status === 'completed' ? 'text-green-600' : 'text-amber-600'}`}>
-                    ${payment.amount.toFixed(2)} • {payment.status}
+                    ₹{Number(payment.amount).toLocaleString('en-IN', { maximumFractionDigits: 0 })} • {payment.status}
                   </p>
                 </div>
               ))}
@@ -352,7 +352,7 @@ export default function TrackOrder() {
                     <p className="text-xs text-slate-500">Qty: {item.quantity}</p>
                     <p className="text-xs text-slate-500">{item.fabric} · {item.color}</p>
                   </div>
-                  <span className="text-sm font-semibold text-slate-800">${(item.price * item.quantity).toFixed(2)}</span>
+                  <span className="text-sm font-semibold text-slate-800">₹{Number(item.price * item.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                 </div>
               ))}
             </div>
@@ -360,7 +360,7 @@ export default function TrackOrder() {
             <div className="space-y-2 text-sm border-t border-slate-100 pt-4 mb-4">
               <div className="flex justify-between">
                 <span className="text-slate-500">Subtotal</span>
-                <span className="font-medium">${order.total.toFixed(2)}</span>
+                <span className="font-medium">₹{Number(order.total).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Shipping</span>
@@ -371,7 +371,7 @@ export default function TrackOrder() {
             <div className="border-t border-slate-100 pt-4 mb-4">
               <div className="flex justify-between items-center">
                 <span className="font-semibold text-slate-800">Total</span>
-                <span className="text-xl font-bold text-primary-700">${order.total.toFixed(2)}</span>
+                <span className="text-xl font-bold text-primary-700">₹{Number(order.total).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
               </div>
             </div>
 

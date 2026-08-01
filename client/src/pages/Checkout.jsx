@@ -11,6 +11,8 @@ const PAYMENT_METHODS = [
   { id: 'online', label: 'Card / UPI / NetBanking', icon: '💳', desc: 'Pay securely via Razorpay (GPay, PhonePe, Paytm, Cards & more)' },
 ]
 
+const formatINR = (amount) => `₹${Number(amount).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+
 export default function Checkout() {
   const { items, totalPrice, totalItems, savings, clearCart } = useCart()
   const { user, isAdmin } = useAuth()
@@ -369,13 +371,13 @@ export default function Checkout() {
 
             {paymentMethod === 'cod' && (
               <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700 animate-fade-in">
-                💵 Pay ₹{totalPrice.toFixed(2)} in cash when your order is delivered. No advance payment needed.
+                💵 Pay {formatINR(totalPrice)} in cash when your order is delivered. No advance payment needed.
               </div>
             )}
 
             {paymentMethod === 'online' && (
               <div className="mt-4 bg-primary-50 border border-primary-200 rounded-lg p-3 text-sm text-primary-700 animate-fade-in">
-                🔒 You will be redirected to Razorpay's secure checkout to pay ₹{totalPrice.toFixed(2)} via
+                🔒 You will be redirected to Razorpay's secure checkout to pay {formatINR(totalPrice)} via
                 UPI, Card, NetBanking, or Wallets.
               </div>
             )}
@@ -400,7 +402,7 @@ export default function Checkout() {
                     <p className="text-sm font-medium text-slate-800 line-clamp-1">{item.name}</p>
                     <p className="text-xs text-slate-500">Qty: {item.quantity}</p>
                   </div>
-                  <span className="text-sm font-semibold text-slate-800">${(item.price * item.quantity).toFixed(2)}</span>
+                  <span className="text-sm font-semibold text-slate-800">{formatINR(item.price * item.quantity)}</span>
                 </div>
               ))}
             </div>
@@ -408,7 +410,7 @@ export default function Checkout() {
             <div className="space-y-2 text-sm border-t border-slate-100 pt-4 mb-4">
               <div className="flex justify-between">
                 <span className="text-slate-500">Items ({totalItems})</span>
-                <span className="font-medium">${totalPrice.toFixed(2)}</span>
+                <span className="font-medium">{formatINR(totalPrice)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Shipping</span>
@@ -417,7 +419,7 @@ export default function Checkout() {
               {savings > 0 && (
                 <div className="flex justify-between text-green-600">
                   <span>You Save</span>
-                  <span className="font-bold">-${savings.toFixed(2)}</span>
+                  <span className="font-bold">-{formatINR(savings)}</span>
                 </div>
               )}
             </div>
@@ -425,12 +427,12 @@ export default function Checkout() {
             <div className="border-t border-slate-100 pt-4 mb-6">
               <div className="flex justify-between items-center">
                 <span className="font-semibold text-slate-800">Total</span>
-                <span className="text-2xl font-bold text-primary-700">${totalPrice.toFixed(2)}</span>
+                <span className="text-2xl font-bold text-primary-700">{formatINR(totalPrice)}</span>
               </div>
             </div>
 
             <button onClick={handlePlaceOrder} disabled={placing || !selectedAddress} className="btn-primary w-full text-base py-3">
-              {placing ? 'Processing...' : `Place Order • $${totalPrice.toFixed(2)}`}
+              {placing ? 'Processing...' : `Place Order • ${formatINR(totalPrice)}`}
             </button>
             <Link to="/cart" className="block text-center text-sm text-primary-600 hover:text-primary-700 mt-4">
               ← Back to Cart
