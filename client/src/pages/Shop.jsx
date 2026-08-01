@@ -12,6 +12,7 @@ export default function Shop() {
   const [categories, setCategories] = useState([])
   const [fabrics, setFabrics] = useState([])
   const [colors, setColors] = useState([])
+  const [mobileFilters, setMobileFilters] = useState(false)
 
   const category = searchParams.get('category') || ''
   const fabric = searchParams.get('fabric') || ''
@@ -58,83 +59,187 @@ export default function Shop() {
     setSearchParams(searchParams, { replace: true })
   }
 
-  const clearFilters = () => setSearchParams({})
+  const clearFilters = () => {
+    setSearchParams({})
+    setMobileFilters(false)
+  }
+
+  const filterCount = [category, fabric, colorParam, search].filter(Boolean).length
+
+  const filterSection = (
+    <div className="space-y-8">
+      {/* Search */}
+      <div>
+        <h3 className="text-xs uppercase tracking-[0.2em] text-slate-400 mb-3">Search</h3>
+        <input
+          type="search"
+          placeholder="Search sarees..."
+          value={search}
+          onChange={(e) => updateFilter('search', e.target.value)}
+          className="input"
+        />
+      </div>
+
+      {/* Category */}
+      {categories.length > 0 && (
+        <div>
+          <h3 className="text-xs uppercase tracking-[0.2em] text-slate-400 mb-3">Category</h3>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm text-slate-700 hover:text-primary-700 cursor-pointer">
+              <input type="radio" name="category" checked={category === ''} onChange={() => updateFilter('category', '')} className="accent-primary-700" />
+              All Categories
+            </label>
+            {categories.map((c) => (
+              <label key={c} className="flex items-center gap-2 text-sm text-slate-700 hover:text-primary-700 cursor-pointer">
+                <input type="radio" name="category" checked={category === c} onChange={() => updateFilter('category', c)} className="accent-primary-700" />
+                {c}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Fabric */}
+      {fabrics.length > 0 && (
+        <div>
+          <h3 className="text-xs uppercase tracking-[0.2em] text-slate-400 mb-3">Fabric</h3>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm text-slate-700 hover:text-primary-700 cursor-pointer">
+              <input type="radio" name="fabric" checked={fabric === ''} onChange={() => updateFilter('fabric', '')} className="accent-primary-700" />
+              All Fabrics
+            </label>
+            {fabrics.map((f) => (
+              <label key={f} className="flex items-center gap-2 text-sm text-slate-700 hover:text-primary-700 cursor-pointer">
+                <input type="radio" name="fabric" checked={fabric === f} onChange={() => updateFilter('fabric', f)} className="accent-primary-700" />
+                {f}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Color */}
+      {colors.length > 0 && (
+        <div>
+          <h3 className="text-xs uppercase tracking-[0.2em] text-slate-400 mb-3">Color</h3>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm text-slate-700 hover:text-primary-700 cursor-pointer">
+              <input type="radio" name="color" checked={colorParam === ''} onChange={() => updateFilter('color', '')} className="accent-primary-700" />
+              All Colors
+            </label>
+            {colors.map((c) => (
+              <label key={c} className="flex items-center gap-2 text-sm text-slate-700 hover:text-primary-700 cursor-pointer">
+                <input type="radio" name="color" checked={colorParam === c} onChange={() => updateFilter('color', c)} className="accent-primary-700" />
+                {c}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {filterCount > 0 && (
+        <button onClick={clearFilters} className="text-xs text-primary-700 hover:text-primary-800 font-medium uppercase tracking-wider underline underline-offset-4">
+          Clear All Filters
+        </button>
+      )}
+    </div>
+  )
 
   return (
     <div className="container-app py-10">
-      {/* Page header */}
-      <div className="mb-8">
-        <p className="text-primary-600 font-medium text-sm uppercase tracking-widest mb-1">Our Collection</p>
-        <h1 className="font-display text-4xl font-semibold text-slate-900">Shop Sarees</h1>
+      {/* Page header — Nalli-style */}
+      <div className="nalli-heading">
+        <h2>Paithani Sarees</h2>
+        <div className="nalli-divider">
+          <span className="text-gold-500">✦</span>
+        </div>
+        <p>Handwoven Pure Silk · Crafted In Yeola, Maharashtra</p>
       </div>
 
-      {/* Filter & Search bar */}
-      <div className="bg-white rounded-xl p-4 shadow-soft mb-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-          <div className="lg:col-span-2 relative">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="search"
-              placeholder="Search sarees..."
-              value={search}
-              onChange={(e) => updateFilter('search', e.target.value)}
-              className="input pl-10"
+      <div className="flex lg:gap-10">
+        {/* Sidebar — desktop */}
+        <aside className="hidden lg:block w-64 flex-shrink-0">
+          {filterSection}
+        </aside>
+
+        {/* Main content */}
+        <div className="flex-1 min-w-0">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-200">
+            <div className="flex items-center gap-3">
+              {/* Mobile filters button */}
+              <button
+                onClick={() => setMobileFilters(true)}
+                className="lg:hidden btn-outline px-3 py-2 text-xs"
+              >
+                Filters {filterCount > 0 && `(${filterCount})`}
+              </button>
+              <p className="text-sm text-slate-500">
+                <span className="font-semibold text-slate-700">{products.length}</span> products
+                {search && <span> for "<span className="text-primary-700">{search}</span>"</span>}
+              </p>
+            </div>
+            <select
+              value={sort}
+              onChange={(e) => updateFilter('sort', e.target.value)}
+              className="input w-auto text-sm"
+            >
+              <option value="newest">Sort: Newest</option>
+              <option value="featured">Sort: Featured</option>
+              <option value="price_asc">Sort: Price: Low to High</option>
+              <option value="price_desc">Sort: Price: High to Low</option>
+            </select>
+          </div>
+
+          {/* Active filter chips */}
+          {filterCount > 0 && (
+            <div className="flex items-center gap-2 flex-wrap mb-4">
+              {category && <span className="badge-outline bg-primary-50 border-primary-200 text-primary-800">Category: {category}</span>}
+              {fabric && <span className="badge-outline bg-primary-50 border-primary-200 text-primary-800">Fabric: {fabric}</span>}
+              {colorParam && <span className="badge-outline bg-primary-50 border-primary-200 text-primary-800">Color: {colorParam}</span>}
+              {search && <span className="badge-outline bg-primary-50 border-primary-200 text-primary-800">Search: "{search}"</span>}
+              <button onClick={clearFilters} className="text-xs text-primary-700 hover:text-primary-800 font-medium uppercase tracking-wider">
+                Clear All
+              </button>
+            </div>
+          )}
+
+          {/* Product grid */}
+          {loading ? (
+            <LoadingSpinner text="Loading sarees..." />
+          ) : products.length > 0 ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+              {products.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No sarees found"
+              description="Try adjusting your search or filters to find what you're looking for."
+              actionText="Clear Filters"
+              actionLink="/shop"
             />
-          </div>
-          <select value={category} onChange={(e) => updateFilter('category', e.target.value)} className="input">
-            <option value="">All Categories</option>
-            {categories.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-          <select value={fabric} onChange={(e) => updateFilter('fabric', e.target.value)} className="input">
-            <option value="">All Fabrics</option>
-            {fabrics.map((f) => (
-              <option key={f} value={f}>{f}</option>
-            ))}
-          </select>
-          <select value={sort} onChange={(e) => updateFilter('sort', e.target.value)} className="input">
-            <option value="newest">Newest</option>
-            <option value="price_asc">Price: Low to High</option>
-            <option value="price_desc">Price: High to Low</option>
-            <option value="featured">Featured</option>
-          </select>
+          )}
         </div>
-        {(category || fabric || search) && (
-          <div className="mt-3 flex items-center gap-2 flex-wrap">
-            {category && <span className="badge-outline">Category: {category}</span>}
-            {fabric && <span className="badge-outline">Fabric: {fabric}</span>}
-            {search && <span className="badge-outline">Search: "{search}"</span>}
-            <button onClick={clearFilters} className="text-xs text-primary-600 hover:text-primary-700 font-medium">
-              Clear All Filters
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* Results count */}
-      <p className="text-sm text-slate-500 mb-6">
-        Showing <span className="font-semibold text-slate-700">{products.length}</span> products
-      </p>
-
-      {/* Product grid */}
-      {loading ? (
-        <LoadingSpinner text="Loading sarees..." />
-      ) : products.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {products.map((product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
+      {/* Mobile filter drawer */}
+      {mobileFilters && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setMobileFilters(false)} />
+          <div className="absolute left-0 top-0 bottom-0 w-80 max-w-[85vw] bg-white shadow-2xl p-6 overflow-y-auto animate-fade-in">
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-200">
+              <h3 className="font-display text-xl font-semibold text-slate-900">Filters</h3>
+              <button onClick={() => setMobileFilters(false)} className="p-2 hover:bg-slate-100 rounded-sm" aria-label="Close">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {filterSection}
+          </div>
         </div>
-      ) : (
-        <EmptyState
-          title="No sarees found"
-          description="Try adjusting your search or filters to find what you're looking for."
-          actionText="Clear Filters"
-          actionLink="/shop"
-        />
       )}
     </div>
   )
