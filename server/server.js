@@ -7,7 +7,7 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 // Initialize database (creates tables & seeds admin)
-require('./db');
+const db = require('./db');
 
 const authRoutes = require('./routes/auth');
 const productRoutes = require('./routes/products');
@@ -75,9 +75,20 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Server error', error: err.message });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`   API docs: http://localhost:${PORT}/`);
-  console.log(`   Uploaded images: http://localhost:${PORT}/uploads/`);
-});
+// Start server (waits for DB init — important for Turso cloud mode)
+const startServer = () => {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`   API docs: http://localhost:${PORT}/`);
+    console.log(`   Uploaded images: http://localhost:${PORT}/uploads/`);
+  });
+};
+
+if (db.ready) {
+  db.ready.then(startServer).catch((err) => {
+    console.error('❌ Database init failed, server not started:', err.message);
+    process.exit(1);
+  });
+} else {
+  startServer();
+}

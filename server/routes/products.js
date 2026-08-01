@@ -2,26 +2,45 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const cloudinary = require('cloudinary').v2;
 const db = require('../db');
 const { auth, admin } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Ensure uploads directory exists
+// Cloudinary config (production: permanent CDN image hosting, free tier)
+const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
+const CLOUD_API_KEY = process.env.CLOUDINARY_API_KEY;
+const CLOUD_API_SECRET = process.env.CLOUDINARY_API_SECRET;
+const useCloudinary = !!(CLOUD_NAME && CLOUD_API_KEY && CLOUD_API_SECRET);
+
+if (useCloudinary) {
+  cloudinary.config({
+    cloud_name: CLOUD_NAME,
+    api_key: CLOUD_API_KEY,
+    api_secret: CLOUD_API_SECRET,
+  });
+  console.log('☁️  Cloudinary configured — product images will be stored permanently in the cloud');
+}
+
+// Ensure uploads directory exists (only used in local/dev mode now)
 const uploadsDir = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configure multer for image uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname) || '.jpg';
-    cb(null, `product-${unique}${ext}`);
-  }
-});
+// Configure multer for image uploads — memory storage so we can push to Cloudinary.
+// In local mode (no Cloudinary env vars) we fall back to disk storage as before.
+const storage = useCloudinary
+  ? multer.memoryStorage()
+  : multer.diskStorage({
+      destination: (req, file, cb) => cb(null, uploadsDir),
+      filename: (req, file, cb) => {
+        const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        const ext = path.extname(file.originalname) || '.jpg';
+        cb(null, `product-${unique}${ext}`);
+      }
+    });
 
 const upload = multer({
   storage,
@@ -35,6 +54,39 @@ const upload = multer({
     }
   }
 });
+
+// Upload an image buffer to Cloudinary. Returns the secure CDN URL.
+// Falls back to a local file path if Cloudinary is not configured.
+const uploadImage = async (file) => {
+  if (useCloudinary) {
+    const base64 = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+    const result = await cloudinary.uploader.upload(base64, {
+      folder: 'saree_products',
+      resource_type: 'image',
+    });
+    return result.secure_url;
+  }
+  // Local disk fallback (dev mode)
+  return `/uploads/${file.filename}`;
+};
+
+// Delete an image from Cloudinary by its URL (best-effort; ignores errors for seed/unsplash images)
+const deleteImage = async (imageUrl) => {
+  if (!imageUrl || !useCloudinary || !imageUrl.includes('res.cloudinary.com')) return;
+  try {
+    const publicId = imageUrl.split('/').slice(-2).join('/').replace(/\.[^.]+$/, '');
+    await cloudinary.uploader.destroy(publicId);
+  } catch (err) {
+    console.error('Cloudinary delete warning:', err.message);
+  }
+};
+
+// Local deletion helper (dev mode)
+const deleteLocalImage = (imageUrl) => {
+  if (!imageUrl || imageUrl.includes('http')) return;
+  const oldPath = path.join(uploadsDir, path.basename(imageUrl));
+  if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+};
 
 // ---------- PUBLIC ROUTES ----------
 
@@ -169,46 +221,50 @@ router.get('/:id', (req, res) => {
 // ---------- ADMIN ROUTES ----------
 
 // POST /api/products - Create new product (admin only)
-router.post('/', auth, admin, upload.single('image'), (req, res) => {
+router.post('/', auth, admin, upload.single('image'), async (req, res) => {
   const { name, description, price, sale_price, fabric, color, size, category, stock, is_featured } = req.body;
 
   if (!name || !price || !req.file) {
-    if (req.file) fs.unlinkSync(req.file.path);
     return res.status(400).json({ message: 'Name, price, and image are required' });
   }
 
-  const imageUrl = `/uploads/${req.file.filename}`;
+  try {
+    const imageUrl = await uploadImage(req.file);
 
-  db.run(
-    `INSERT INTO products (name, description, price, sale_price, fabric, color, size, category, image_url, stock, is_featured)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      name,
-      description || '',
-      parseFloat(price),
-      sale_price ? parseFloat(sale_price) : null,
-      fabric || '',
-      color || '',
-      size || 'U (6.3 m)',
-      category || 'General',
-      imageUrl,
-      parseInt(stock) || 10,
-      is_featured ? 1 : 0
-    ],
-    function (err) {
-      if (err) {
-        if (req.file) fs.unlinkSync(req.file.path);
-        return res.status(500).json({ message: 'Server error', error: err.message });
-      }
-      const newId = this.lastID;
-      db.get('SELECT * FROM products WHERE id = ?', [newId], (getErr, newProduct) => {
-        res.status(201).json({
-          message: 'Product created successfully!',
-          product: newProduct
+    db.run(
+      `INSERT INTO products (name, description, price, sale_price, fabric, color, size, category, image_url, stock, is_featured)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        name,
+        description || '',
+        parseFloat(price),
+        sale_price ? parseFloat(sale_price) : null,
+        fabric || '',
+        color || '',
+        size || 'U (6.3 m)',
+        category || 'General',
+        imageUrl,
+        parseInt(stock) || 10,
+        is_featured ? 1 : 0
+      ],
+      function (err) {
+        if (err) {
+          if (!useCloudinary && req.file) fs.unlinkSync(req.file.path);
+          return res.status(500).json({ message: 'Server error', error: err.message });
+        }
+        const newId = this.lastID;
+        db.get('SELECT * FROM products WHERE id = ?', [newId], (getErr, newProduct) => {
+          res.status(201).json({
+            message: 'Product created successfully!',
+            product: newProduct
+          });
         });
-      });
-    }
-  );
+      }
+    );
+  } catch (err) {
+    console.error('Image upload failed:', err.message);
+    res.status(500).json({ message: 'Image upload failed', error: err.message });
+  }
 });
 
 // POST /api/products/:id/stock - Update stock only (admin only)
@@ -234,52 +290,60 @@ router.post('/:id/stock', auth, admin, (req, res) => {
 });
 
 // PUT /api/products/:id - Update product (admin only)
-router.put('/:id', auth, admin, upload.single('image'), (req, res) => {
+router.put('/:id', auth, admin, upload.single('image'), async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ message: 'Invalid product id' });
 
-  db.get('SELECT * FROM products WHERE id = ?', [id], (err, existing) => {
+  db.get('SELECT * FROM products WHERE id = ?', [id], async (err, existing) => {
     if (err) return res.status(500).json({ message: 'Server error', error: err.message });
     if (!existing) {
-      if (req.file) fs.unlinkSync(req.file.path);
+      if (!useCloudinary && req.file) fs.unlinkSync(req.file.path);
       return res.status(404).json({ message: 'Product not found' });
     }
 
     const { name, description, price, sale_price, fabric, color, size, category, stock, is_featured } = req.body;
-    const imageUrl = req.file ? `/uploads/${req.file.filename}` : existing.image_url;
 
-    db.run(
-      `UPDATE products SET
-         name = ?, description = ?, price = ?, sale_price = ?, fabric = ?, color = ?,
-         size = ?, category = ?, image_url = ?, stock = ?, is_featured = ?
-       WHERE id = ?`,
-      [
-        name || existing.name,
-        description !== undefined ? description : existing.description,
-        price !== undefined ? parseFloat(price) : existing.price,
-        sale_price !== undefined && sale_price !== ''  ? parseFloat(sale_price) : null,
-        fabric || existing.fabric,
-        color || existing.color,
-        size || existing.size,
-        category || existing.category,
-        imageUrl,
-        stock !== undefined ? parseInt(stock) : existing.stock,
-        is_featured !== undefined ? (is_featured ? 1 : 0) : existing.is_featured
-      ],
-      (updateErr) => {
-        if (updateErr) {
-          if (req.file) fs.unlinkSync(req.file.path);
-          return res.status(500).json({ message: 'Server error', error: updateErr.message });
-        }
-        if (req.file) {
-          const oldPath = path.join(uploadsDir, path.basename(existing.image_url));
-          if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-        }
-        db.get('SELECT * FROM products WHERE id = ?', [id], (getErr, updated) => {
-          res.json({ message: 'Product updated successfully!', product: updated });
-        });
+    try {
+      // If a new image was uploaded, upload it (Cloudinary or local) and delete the old one
+      let newImageUrl = existing.image_url;
+      if (req.file) {
+        newImageUrl = await uploadImage(req.file);
+        deleteImage(existing.image_url);
+        if (!useCloudinary) deleteLocalImage(existing.image_url);
       }
-    );
+
+      db.run(
+        `UPDATE products SET
+           name = ?, description = ?, price = ?, sale_price = ?, fabric = ?, color = ?,
+           size = ?, category = ?, image_url = ?, stock = ?, is_featured = ?
+         WHERE id = ?`,
+        [
+          name || existing.name,
+          description !== undefined ? description : existing.description,
+          price !== undefined ? parseFloat(price) : existing.price,
+          sale_price !== undefined && sale_price !== ''  ? parseFloat(sale_price) : null,
+          fabric || existing.fabric,
+          color || existing.color,
+          size || existing.size,
+          category || existing.category,
+          newImageUrl,
+          stock !== undefined ? parseInt(stock) : existing.stock,
+          is_featured !== undefined ? (is_featured ? 1 : 0) : existing.is_featured
+        ],
+        (updateErr) => {
+          if (updateErr) {
+            if (!useCloudinary && req.file) fs.unlinkSync(req.file.path);
+            return res.status(500).json({ message: 'Server error', error: updateErr.message });
+          }
+          db.get('SELECT * FROM products WHERE id = ?', [id], (getErr, updated) => {
+            res.json({ message: 'Product updated successfully!', product: updated });
+          });
+        }
+      );
+    } catch (uploadErr) {
+      console.error('Image upload failed:', uploadErr.message);
+      res.status(500).json({ message: 'Image upload failed', error: uploadErr.message });
+    }
   });
 });
 
@@ -299,8 +363,9 @@ router.delete('/:id', auth, admin, (req, res) => {
       db.run('DELETE FROM wishlist WHERE product_id = ?', [id]);
       db.run('DELETE FROM reviews WHERE product_id = ?', [id]);
 
-      const oldPath = path.join(uploadsDir, path.basename(existing.image_url));
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      // Remove image from cloud/local storage
+      deleteImage(existing.image_url);
+      deleteLocalImage(existing.image_url);
 
       res.json({ message: 'Product deleted successfully!' });
     });
