@@ -1,0 +1,38 @@
+# Render Blueprint — one-click deploy of SareeElegance backend + frontend
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  # ── Backend API ──────────────────────────────────────────────
+  - type: web
+    name: saree-elegance-server
+    runtime: node
+    rootDir: server
+    plan: free
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: JWT_SECRET
+        generateValue: true
+      - key: RAZORPAY_KEY_ID
+        sync: false    # set manually (rzp_test_xxx from razorpay.com)
+      - key: RAZORPAY_KEY_SECRET
+        sync: false    # set manually
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false    # optional — set manually
+      - key: DATABASE_PATH
+        value: /var/data/sarees.db   # persistent disk
+    disk:
+      name: sqlite-data
+      mountPath: /var/data
+      sizeGB: 1
+
+  # ── Frontend (static SPA) ────────────────────────────────────
+  - type: web
+    name: saree-elegance-client
+    runtime: static
+    rootDir: client
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://saree-elegance-server.onrender.com/api
