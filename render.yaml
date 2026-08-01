@@ -8,6 +8,7 @@ services:
     runtime: node
     rootDir: server
     plan: free
+    startCommand: node server.js
     envVars:
       - key: NODE_VERSION
         value: 20
@@ -19,12 +20,6 @@ services:
         sync: false    # set manually
       - key: RAZORPAY_WEBHOOK_SECRET
         sync: false    # optional — set manually
-      - key: DATABASE_PATH
-        value: /var/data/sarees.db   # persistent disk
-    disk:
-      name: sqlite-data
-      mountPath: /var/data
-      sizeGB: 1
 
   # ── Frontend (static SPA) ────────────────────────────────────
   - type: web
