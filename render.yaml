@@ -8,6 +8,7 @@ services:
     runtime: node
     rootDir: server
     plan: free
+    buildCommand: npm install
     startCommand: node server.js
     envVars:
       - key: NODE_VERSION
