@@ -138,7 +138,7 @@ export default function Checkout() {
         key: rzpOrder.key_id,
         amount: rzpOrder.amount, // paise
         currency: rzpOrder.currency || 'INR',
-        name: 'Saree Elegance',
+        name: 'Swaranjali Sarees',
         description: `Order of ${totalItems} item${totalItems > 1 ? 's' : ''}`,
         image: 'https://placehold.co/100x100/f59e0b/white?text=S',
         order_id: rzpOrder.order_id,

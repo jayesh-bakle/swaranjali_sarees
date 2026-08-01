@@ -109,7 +109,7 @@ export default function TrackOrder() {
         key: data.key_id,
         amount: data.amount,
         currency: data.currency,
-        name: 'SareeElegance',
+        name: 'Swaranjali Sarees',
         description: `Payment for Order #${order.id}`,
         order_id: data.order_id,
         notes: { orderId: String(order.id) },

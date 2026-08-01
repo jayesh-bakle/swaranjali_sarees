@@ -47,7 +47,7 @@ export default function Navbar() {
         <Link to="/" className="flex items-center gap-2 group">
           <span className="text-2xl">🧵</span>
           <span className="font-display text-2xl font-semibold text-primary-700 group-hover:text-primary-600 transition-colors">
-            Saree<span className="text-gold-500">Elegance</span>
+            Swaranjali<span className="text-gold-500">Sarees</span>
           </span>
         </Link>
 

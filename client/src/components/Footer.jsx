@@ -10,7 +10,7 @@ export default function Footer() {
             <div className="flex items-center gap-2 mb-4">
               <span className="text-2xl">🧵</span>
               <span className="font-display text-2xl font-semibold text-white">
-                Saree<span className="text-gold-400">Elegance</span>
+                Swaranjali<span className="text-gold-400">Sarees</span>
               </span>
             </div>
             <p className="text-sm text-slate-400 max-w-md">
@@ -43,14 +43,14 @@ export default function Footer() {
             <h3 className="font-display text-lg text-white mb-4">Contact</h3>
             <ul className="space-y-2 text-sm">
               <li>📞 +91 98765 43210</li>
-              <li>📧 support@sareeelegance.com</li>
+              <li>📧 support@swaranjalisarees.com</li>
               <li>📍 Mumbai, Maharashtra, India</li>
             </ul>
           </div>
         </div>
 
         <div className="border-t border-slate-800 mt-10 pt-6 text-center text-xs text-slate-500">
-          © {new Date().getFullYear()} SareeElegance. All rights reserved. Crafted with ❤️ for saree lovers.
+          © {new Date().getFullYear()} Swaranjali Sarees. All rights reserved. Crafted with ❤️ for saree lovers.
         </div>
       </div>
     </footer>
