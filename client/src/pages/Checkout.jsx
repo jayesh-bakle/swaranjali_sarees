@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import API from '../api/client'
 import EmptyState from '../components/EmptyState'
 import toast from 'react-hot-toast'
+import { resolveImageUrl } from '../utils/imageUrl'
 
 const PAYMENT_METHODS = [
   { id: 'cod', label: 'Cash on Delivery', icon: '💵', desc: 'Pay when your order arrives' },
@@ -392,9 +393,9 @@ export default function Checkout() {
             <div className="space-y-3 mb-4 max-h-60 overflow-y-auto">
               {items.map((item) => (
                 <div key={item.id} className="flex gap-3">
-                  <img
-                    src={item.image?.startsWith('http') ? item.image : (import.meta.env.VITE_API_URL || 'http://localhost:5000') + item.image}
-                    alt={item.name}
+              <img
+                src={resolveImageUrl(item.image)}
+                alt={item.name}
                     className="w-14 h-16 object-cover rounded-lg flex-shrink-0"
                     onError={(e) => { e.target.src = 'https://placehold.co/100x120/slate/white?text=Saree' }}
                   />

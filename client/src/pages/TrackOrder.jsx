@@ -5,6 +5,7 @@ import API from '../api/client'
 import EmptyState from '../components/EmptyState'
 import LoadingSpinner from '../components/LoadingSpinner'
 import toast from 'react-hot-toast'
+import { resolveImageUrl } from '../utils/imageUrl'
 
 // Load Razorpay checkout script
 const loadRazorpayScript = () => {
@@ -185,8 +186,6 @@ export default function TrackOrder() {
   const currentStatusIndex = STATUS_ORDER.indexOf(order.status)
   const isCancelled = order.status === 'cancelled'
   const cancellable = ['pending', 'confirmed', 'processing'].includes(order.status)
-  const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
-
   return (
     <div className="container-app py-10">
       <div className="flex items-center justify-between mb-8">
@@ -342,7 +341,7 @@ export default function TrackOrder() {
               {order.items.map((item, index) => (
                 <div key={index} className="flex gap-3">
                   <img
-                    src={item.image?.startsWith('http') ? item.image : baseURL + item.image}
+                    src={resolveImageUrl(item.image)}
                     alt={item.name}
                     className="w-14 h-16 object-cover rounded-lg flex-shrink-0"
                     onError={(e) => { e.target.src = 'https://placehold.co/100x120/slate/white?text=Saree' }}

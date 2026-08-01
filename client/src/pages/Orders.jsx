@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
 import toast from 'react-hot-toast'
+import { resolveImageUrl } from '../utils/imageUrl'
 
 const STATUS_COLORS = {
   pending: 'bg-amber-100 text-amber-700',
@@ -158,8 +159,6 @@ export default function Orders() {
     return <LoadingSpinner text="Loading your orders..." fullPage />
   }
 
-  const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
-
   return (
     <div className="container-app py-10">
       <h1 className="font-display text-3xl font-semibold text-slate-900 mb-8">
@@ -201,7 +200,7 @@ export default function Orders() {
                 {order.items.map((item, idx) => (
                   <div key={idx} className="flex items-center gap-4">
                     <img
-                      src={item.image?.startsWith('http') ? item.image : baseURL + item.image}
+                      src={resolveImageUrl(item.image)}
                       alt={item.name}
                       className="w-14 h-16 object-cover rounded-lg flex-shrink-0"
                       onError={(e) => { e.target.src = 'https://placehold.co/100x120/slate/white?text=Saree' }}

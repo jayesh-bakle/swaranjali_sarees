@@ -6,6 +6,7 @@ import API from '../api/client'
 import EmptyState from '../components/EmptyState'
 import LoadingSpinner from '../components/LoadingSpinner'
 import toast from 'react-hot-toast'
+import { resolveImageUrl } from '../utils/imageUrl'
 
 export default function Wishlist() {
   const { user, isAdmin } = useAuth()
@@ -88,8 +89,6 @@ export default function Wishlist() {
     )
   }
 
-  const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
-
   return (
     <div className="container-app py-10">
       <div className="flex items-center justify-between mb-8">
@@ -106,7 +105,7 @@ export default function Wishlist() {
           <div key={item.id} className="bg-white rounded-xl shadow-soft overflow-hidden group">
             <Link to={`/product/${item.id}`} className="block relative">
               <img
-                src={item.image_url?.startsWith('http') ? item.image_url : baseURL + item.image_url}
+                src={resolveImageUrl(item.image_url)}
                 alt={item.name}
                 className="w-full h-56 object-cover group-hover:scale-105 transition-transform duration-300"
                 onError={(e) => { e.target.src = 'https://placehold.co/200x250/slate/white?text=Saree' }}

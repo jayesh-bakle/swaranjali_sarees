@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import API from '../api/client'
+import { resolveImageUrl } from '../utils/imageUrl'
 import EmptyState from '../components/EmptyState'
 import toast from 'react-hot-toast'
 
@@ -96,7 +97,7 @@ export default function Cart() {
             <div key={item.id} className="bg-white rounded-xl shadow-soft p-4 flex gap-4">
               {/* Image */}
               <img
-                src={item.image?.startsWith('http') ? item.image : (import.meta.env.VITE_API_URL || 'http://localhost:5000') + item.image}
+                src={resolveImageUrl(item.image)}
                 alt={item.name}
                 className="w-24 h-28 object-cover rounded-lg flex-shrink-0"
                 onError={(e) => { e.target.src = 'https://placehold.co/200x250/slate/white?text=Saree' }}

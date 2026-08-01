@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import ProductCard from '../components/ProductCard'
 import LoadingSpinner from '../components/LoadingSpinner'
 import toast from 'react-hot-toast'
+import { resolveImageUrl } from '../utils/imageUrl'
 
 export default function ProductDetail() {
   const { id } = useParams()
@@ -55,9 +56,7 @@ export default function ProductDetail() {
     ? Math.round(((product.price - product.sale_price) / product.price) * 100)
     : 0
 
-  const imageUrl = product.image_url?.startsWith('http')
-    ? product.image_url
-    : (import.meta.env.VITE_API_URL || 'http://localhost:5000') + product.image_url
+  const imageUrl = resolveImageUrl(product.image_url)
 
   const handleAddToCart = () => {
     addItem(product, quantity)

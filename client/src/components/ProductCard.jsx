@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
+import { resolveImageUrl } from '../utils/imageUrl'
 
 function formatPrice(price) {
   return `₹${Number(price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
@@ -19,7 +20,7 @@ export default function ProductCard({ product }) {
       {/* Image */}
       <Link to={`/product/${product.id}`} className="relative block aspect-[3/4] overflow-hidden bg-slate-50">
         <img
-          src={product.image_url?.startsWith('http') ? product.image_url : (import.meta.env.VITE_API_URL || 'http://localhost:5000') + product.image_url}
+          src={resolveImageUrl(product.image_url)}
           alt={product.name}
           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
           loading="lazy"

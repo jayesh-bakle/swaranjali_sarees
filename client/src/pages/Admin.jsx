@@ -4,6 +4,7 @@ import API from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 import LoadingSpinner from '../components/LoadingSpinner'
+import { resolveImageUrl } from '../utils/imageUrl'
 
 const ORDER_STATUSES = ['pending', 'confirmed', 'processing', 'shipped', 'out_for_delivery', 'delivered', 'cancelled']
 const PAYMENT_STATUSES = ['pending', 'paid', 'failed', 'refunded']
@@ -300,7 +301,7 @@ export default function Admin() {
                   {preview ? (
                     <img src={preview} alt="Preview" className="mt-2 h-40 object-cover rounded-lg" />
                   ) : editingProduct ? (
-                    <img src={editingProduct.image_url || 'https://placehold.co/200'} alt={editingProduct.name} className="mt-2 h-40 object-cover rounded-lg" />
+                    <img src={resolveImageUrl(editingProduct.image_url)} alt={editingProduct.name} className="mt-2 h-40 object-cover rounded-lg" />
                   ) : null}
                 </div>
                 <div className="md:col-span-2 flex items-center gap-2">
@@ -341,7 +342,7 @@ export default function Admin() {
                     <tr key={p.id} className="hover:bg-slate-50">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <img src={p.image_url || 'https://placehold.co/50'} alt={p.name} className="w-12 h-14 object-cover rounded" />
+                          <img src={resolveImageUrl(p.image_url)} alt={p.name} className="w-12 h-14 object-cover rounded" />
                           <div>
                             <p className="font-medium text-slate-800">{p.name}</p>
                             <p className="text-xs text-slate-500">{p.category} · {p.fabric}</p>
@@ -424,7 +425,7 @@ export default function Admin() {
                       {o.items.slice(0, 3).map((item, idx) => (
                         <img
                           key={idx}
-                          src={item.image?.startsWith('http') ? item.image : `http://localhost:5000${item.image}`}
+                          src={resolveImageUrl(item.image)}
                           alt={item.name}
                           className="w-8 h-10 object-cover rounded border-2 border-white"
                           onError={(e) => { e.target.style.display = 'none' }}
@@ -673,7 +674,7 @@ function InventoryPanel({ inventory }) {
               <tr key={p.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <img src={p.image_url || 'https://placehold.co/50'} alt={p.name} className="w-10 h-12 object-cover rounded" />
+                    <img src={resolveImageUrl(p.image_url)} alt={p.name} className="w-10 h-12 object-cover rounded" />
                     <p className="font-medium text-slate-800">{p.name}</p>
                   </div>
                 </td>
