@@ -63,6 +63,12 @@ services:
     rootDir: client
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
+    # SPA fallback: serve index.html for every path so deep links like /orders
+    # work on reload. (client/public/_redirects has the same rule as a fallback.)
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
     envVars:
       - key: VITE_API_URL
         value: https://swaranjali-server.onrender.com/api
