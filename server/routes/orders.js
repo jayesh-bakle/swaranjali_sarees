@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { auth } = require('../middleware/auth');
+const { appendOrderToSheet } = require('../utils/googleSheet');
 
 const router = express.Router();
 
@@ -62,6 +63,15 @@ router.post('/', auth, (req, res) => {
 
           const orderId = this.lastID;
           addTracking(orderId, orderStatus, paymentMethod === 'cod' ? 'Order placed. Pay on delivery.' : 'Order placed and paid.');
+
+          // Append order to Google Sheet (fire-and-forget, never blocks response)
+          db.get('SELECT name, email FROM users WHERE id = ?', [req.user.id], (userErr, userRow) => {
+            appendOrderToSheet(
+              { ...JSON.parse(JSON.stringify({ id: orderId, phone: phone || '', shipping_address, payment_method: paymentMethod, payment_status: paymentStatus, status: orderStatus, total: parseFloat(total) })) },
+              items,
+              userRow || {}
+            ).catch(() => {}); // ensure no unhandled rejection
+          });
 
           // Record payment if not COD
           if (paymentMethod !== 'cod' && paymentMethod !== 'cash') {
