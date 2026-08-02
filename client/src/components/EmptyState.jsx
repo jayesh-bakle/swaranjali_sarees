@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 
-export default function EmptyState({ icon = '🛍️', title, description, actionText = 'Shop Sarees', actionLink = '/shop', actionHandler = null }) {
+export default function EmptyState({ icon = '🛍️', title, description, actionText = 'Shop Sarees', actionLink = '/shop', actionState = null, actionHandler = null }) {
   const buttonClass = 'btn-primary'
   return (
     <div className="text-center py-20">
@@ -12,7 +12,7 @@ export default function EmptyState({ icon = '🛍️', title, description, actio
           {actionText}
         </button>
       ) : (
-        <Link to={actionLink} className={buttonClass}>
+        <Link to={actionState ? { pathname: actionLink, state: actionState } : actionLink} className={buttonClass}>
           {actionText}
         </Link>
       )}

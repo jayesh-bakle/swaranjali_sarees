@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import API from '../api/client'
 import EmptyState from '../components/EmptyState'
 import LoadingSpinner from '../components/LoadingSpinner'
 import toast from 'react-hot-toast'
 import { resolveImageUrl } from '../utils/imageUrl'
+
+// Safe JSON parse — malformed stored data must never crash the page
+const safeJson = (str, fallback = {}) => {
+  try { return str ? JSON.parse(str) : fallback } catch (_) { return fallback }
+}
 
 // Load Razorpay checkout script
 const loadRazorpayScript = () => {
@@ -49,6 +54,7 @@ const STATUS_ICONS = {
 export default function TrackOrder() {
   const { id } = useParams()
   const { user, isAdmin } = useAuth()
+  const location = useLocation()
   const [order, setOrder] = useState(null)
   const [tracking, setTracking] = useState([])
   const [payments, setPayments] = useState([])
@@ -160,7 +166,7 @@ export default function TrackOrder() {
     return (
       <div className="container-app py-10">
         <h1 className="font-display text-3xl font-semibold text-slate-900 mb-8">Track Order</h1>
-        <EmptyState icon="🔒" title="Please sign in" description="Login to track your order." actionText="Sign In" actionLink="/login" />
+        <EmptyState icon="🔒" title="Please sign in" description="Login to track your order." actionText="Sign In" actionLink="/login" actionState={{ from: location.pathname }} />
       </div>
     )
   }
@@ -311,7 +317,7 @@ export default function TrackOrder() {
                     <p className="text-slate-600">💵 Cash on Delivery</p>
                   ) : (
                     <>
-                      <p className="text-slate-600">{payment.method === 'card' ? '💳 Card' : '📱 UPI'} • {payment.method === 'card' && JSON.parse(payment.payment_details || '{}')?.cardLast4 ? `•••• ${JSON.parse(payment.payment_details || '{}').cardLast4}` : ''}</p>
+                      <p className="text-slate-600">{payment.method === 'card' ? '💳 Card' : '📱 UPI'} • {payment.method === 'card' && safeJson(payment.payment_details)?.cardLast4 ? `•••• ${safeJson(payment.payment_details).cardLast4}` : ''}</p>
                       <p className="text-slate-500">Transaction ID: {payment.transaction_id}</p>
                     </>
                   )}

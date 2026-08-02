@@ -3,17 +3,29 @@ import toast from 'react-hot-toast'
 
 const CartContext = createContext(null)
 
+// Treat a real 0 as "out of stock", not as "no cap"
+const capStock = (stock) => (typeof stock === 'number' ? Math.max(0, stock) : 99)
+
 // Cart reducer
 const cartReducer = (state, action) => {
   switch (action.type) {
     case 'ADD_ITEM': {
       const existing = state.items.find((item) => item.id === action.payload.id)
       if (existing) {
+        const max = capStock(action.payload.stock ?? existing.stock)
+        // Clamp the merged quantity so repeated clicks can't exceed stock
+        const newQty = Math.min(existing.quantity + action.payload.quantity, max)
         return {
           ...state,
           items: state.items.map((item) =>
             item.id === action.payload.id
-              ? { ...item, quantity: item.quantity + action.payload.quantity }
+              ? {
+                  ...item,
+                  quantity: Math.max(1, newQty),
+                  price: action.payload.price,
+                  originalPrice: action.payload.originalPrice,
+                  stock: action.payload.stock ?? existing.stock,
+                }
               : item
           ),
         }
@@ -27,10 +39,12 @@ const cartReducer = (state, action) => {
         ...state,
         items: state.items.map((item) =>
           item.id === action.payload.id
-            ? { ...item, quantity: Math.max(1, Math.min(action.payload.quantity, item.stock || 99)) }
+            ? { ...item, quantity: Math.max(1, Math.min(action.payload.quantity, capStock(item.stock))) }
             : item
         ),
       }
+    case 'SET_CART':
+      return { items: Array.isArray(action.payload) ? action.payload : [] }
     case 'CLEAR_CART':
       return { items: [] }
     default:
@@ -55,7 +69,26 @@ export function CartProvider({ children }) {
     localStorage.setItem('cart', JSON.stringify(state))
   }, [state])
 
+  // Keep the cart in sync across tabs
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'cart' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue)
+          dispatch({ type: 'SET_CART', payload: parsed?.items || [] })
+        } catch (_) { /* ignore malformed storage */ }
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
   const addItem = (product, quantity = 1) => {
+    // Never allow adding an out-of-stock product to the cart
+    if (capStock(product.stock) <= 0) {
+      toast.error(`${product.name} is out of stock`)
+      return
+    }
     dispatch({
       type: 'ADD_ITEM',
       payload: {
@@ -87,10 +120,10 @@ export function CartProvider({ children }) {
 
   const totalItems = state.items.reduce((sum, item) => sum + item.quantity, 0)
   const totalPrice = state.items.reduce((sum, item) => sum + item.price * item.quantity, 0)
-  const savings = state.items.reduce(
+  const savings = Math.max(0, state.items.reduce(
     (sum, item) => sum + (item.originalPrice - item.price) * item.quantity,
     0
-  )
+  ))
 
   return (
     <CartContext.Provider

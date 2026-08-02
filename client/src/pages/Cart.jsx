@@ -1,58 +1,20 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
-import API from '../api/client'
 import { resolveImageUrl } from '../utils/imageUrl'
 import EmptyState from '../components/EmptyState'
-import toast from 'react-hot-toast'
 
 export default function Cart() {
   const { items, removeItem, updateQuantity, clearCart, totalPrice, totalItems, savings } = useCart()
 
   const { user, isAdmin } = useAuth()
-  const [checkout, setCheckout] = useState(false)
-  const [formData, setFormData] = useState({ address: '', phone: '' })
-  const [placing, setPlacing] = useState(false)
-  const navigate = useNavigate()
-
-  const handlePlaceOrder = async (e) => {
-    e.preventDefault()
-    if (!user) {
-      toast.error('Please login to place your order')
-      navigate('/login')
-      return
-    }
-
-    if (isAdmin) {
-      toast.error('Admins manage the store. Only customers can place orders.')
-      return
-    }
-
-    setPlacing(true)
-    try {
-      const { data } = await API.post('/orders', {
-        items,
-        total: totalPrice,
-        shipping_address: formData.address,
-        phone: formData.phone,
-      })
-      clearCart()
-      toast.success('🎉 Order placed successfully!')
-      navigate('/success')
-    } catch (err) {
-      console.error('Error placing order:', err)
-      toast.error(err.response?.data?.message || 'Failed to place order. Please try again.')
-    } finally {
-      setPlacing(false)
-    }
-  }
+  const location = useLocation()
 
   if (!user) {
     return (
       <div className="container-app">
         <h1 className="font-display text-3xl font-semibold text-slate-900 py-10">Shopping Cart</h1>
-        <EmptyState icon="🔒" title="Please sign in to shop" description="Login to add sarees to your cart and place orders." actionText="Sign In" actionLink="/login" />
+        <EmptyState icon="🔒" title="Please sign in to shop" description="Login to add sarees to your cart and place orders." actionText="Sign In" actionLink="/login" actionState={{ from: location.pathname }} />
       </div>
     )
   }
@@ -112,6 +74,9 @@ export default function Cart() {
                     <p className="text-xs text-slate-500 mt-1">
                       {item.fabric} · {item.color} · {item.size}
                     </p>
+                    {item.stock <= 0 && (
+                      <p className="text-xs text-red-600 mt-1 font-medium">Out of stock — remove to continue</p>
+                    )}
                   </div>
                   <button
                     onClick={() => removeItem(item.id)}
@@ -188,46 +153,9 @@ export default function Cart() {
               </div>
             </div>
 
-            {!checkout ? (
-              <button onClick={() => setCheckout(true)} className="btn-primary w-full text-base py-3">
-                Proceed to Checkout →
-              </button>
-            ) : (
-              <form onSubmit={handlePlaceOrder} className="space-y-4">
-                <div>
-                  <label className="label">Shipping Address *</label>
-                  <textarea
-                    required
-                    rows={3}
-                    placeholder="Enter your full shipping address"
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    className="input"
-                  />
-                </div>
-                <div>
-                  <label className="label">Phone Number *</label>
-                  <input
-                    required
-                    type="tel"
-                    placeholder="Enter your phone number"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="input"
-                  />
-                </div>
-                <button type="submit" disabled={placing} className="btn-primary w-full text-base py-3">
-                  {placing ? 'Placing Order...' : 'Place Order ✅'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCheckout(false)}
-                  className="w-full text-sm text-slate-500 hover:text-slate-700 text-center"
-                >
-                  ← Back
-                </button>
-              </form>
-            )}
+            <Link to="/checkout" className="btn-primary w-full text-base py-3 text-center">
+              Proceed to Checkout →
+            </Link>
 
             <Link to="/shop" className="block text-center text-sm text-primary-600 hover:text-primary-700 mt-4">
               Continue Shopping

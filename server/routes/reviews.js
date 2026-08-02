@@ -44,55 +44,87 @@ router.post('/', auth, (req, res) => {
   }
 
   const { product_id, rating, title, comment } = req.body;
-  if (!product_id || !rating || rating < 1 || rating > 5) {
-    return res.status(400).json({ message: 'Product id and rating (1-5) are required' });
+  const pid = Number(product_id);
+  const ratingNum = Number(rating);
+
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return res.status(400).json({ message: 'Valid product id is required' });
+  }
+  if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+    return res.status(400).json({ message: 'Rating must be a whole number between 1 and 5' });
+  }
+  if (title && String(title).length > 120) {
+    return res.status(400).json({ message: 'Title must be 120 characters or fewer' });
+  }
+  if (comment && String(comment).length > 1000) {
+    return res.status(400).json({ message: 'Comment must be 1000 characters or fewer' });
   }
 
-  db.get('SELECT id FROM products WHERE id = ?', [product_id], (err, product) => {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+  db.get('SELECT id FROM products WHERE id = ?', [pid], (err, product) => {
+    if (err) return res.status(500).json({ message: 'Server error' });
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    db.get('SELECT id FROM reviews WHERE product_id = ? AND user_id = ?', [product_id, req.user.id], (checkErr, existing) => {
-      if (checkErr) return res.status(500).json({ message: 'Server error', error: checkErr.message });
-      if (existing) {
-        // Update existing review
-        db.run(
-          'UPDATE reviews SET rating = ?, title = ?, comment = ? WHERE id = ?',
-          [Number(rating), title || '', comment || '', existing.id],
-          function (updateErr) {
-            if (updateErr) return res.status(500).json({ message: 'Server error', error: updateErr.message });
-            db.get(
-              'SELECT r.*, u.name as user_name FROM reviews r JOIN users u ON u.id = r.user_id WHERE r.id = ?',
-              [existing.id],
-              (getErr, review) => {
-                if (getErr) return res.status(500).json({ message: 'Server error', error: getErr.message });
-                res.json({ message: 'Review updated!', review });
-              }
-            );
-          }
-        );
-      } else {
-        // Insert new review
-        db.run(
-          'INSERT INTO reviews (product_id, user_id, rating, title, comment) VALUES (?, ?, ?, ?, ?)',
-          [product_id, req.user.id, Number(rating), title || '', comment || ''],
-          function (insertErr) {
-            if (insertErr) return res.status(500).json({ message: 'Server error', error: insertErr.message });
-            const reviewId = this.lastID;
-            db.get(
-              'SELECT r.*, u.name as user_name FROM reviews r JOIN users u ON u.id = r.user_id WHERE r.id = ?',
-              [reviewId],
-              (getErr, review) => {
-                if (getErr) return res.status(500).json({ message: 'Server error', error: getErr.message });
-                res.status(201).json({ message: 'Review added! Thank you!', review });
-              }
-            );
-          }
-        );
+    const proceed = () => upsertReview(pid, ratingNum, title || '', comment || '', req.user.id, res);
+
+    // Optional: only verified purchasers may review (off by default so seed data works)
+    if (process.env.REQUIRE_PURCHASE_FOR_REVIEWS !== 'true') return proceed();
+
+    db.get(
+      `SELECT COUNT(*) as c FROM orders o, json_each(o.items) item
+       WHERE o.user_id = ? AND o.status != 'cancelled'
+         AND CAST(json_extract(item.value, '$.id') AS INTEGER) = ?`,
+      [req.user.id, pid],
+      (pErr, row) => {
+        if (pErr) return res.status(500).json({ message: 'Server error' });
+        if (!row || row.c === 0) {
+          return res.status(403).json({ message: 'Only verified purchasers can review this product' });
+        }
+        proceed();
       }
-    });
+    );
   });
 });
+
+// Insert-or-update a review (one per user per product)
+const upsertReview = (productId, rating, title, comment, userId, res) => {
+  db.get('SELECT id FROM reviews WHERE product_id = ? AND user_id = ?', [productId, userId], (checkErr, existing) => {
+    if (checkErr) return res.status(500).json({ message: 'Server error' });
+    if (existing) {
+      db.run(
+        'UPDATE reviews SET rating = ?, title = ?, comment = ? WHERE id = ?',
+        [rating, title, comment, existing.id],
+        function (updateErr) {
+          if (updateErr) return res.status(500).json({ message: 'Server error' });
+          db.get(
+            'SELECT r.*, u.name as user_name FROM reviews r JOIN users u ON u.id = r.user_id WHERE r.id = ?',
+            [existing.id],
+            (getErr, review) => {
+              if (getErr) return res.status(500).json({ message: 'Server error' });
+              res.json({ message: 'Review updated!', review });
+            }
+          );
+        }
+      );
+    } else {
+      db.run(
+        'INSERT INTO reviews (product_id, user_id, rating, title, comment) VALUES (?, ?, ?, ?, ?)',
+        [productId, userId, rating, title, comment],
+        function (insertErr) {
+          if (insertErr) return res.status(500).json({ message: 'Server error' });
+          const reviewId = this.lastID;
+          db.get(
+            'SELECT r.*, u.name as user_name FROM reviews r JOIN users u ON u.id = r.user_id WHERE r.id = ?',
+            [reviewId],
+            (getErr, review) => {
+              if (getErr) return res.status(500).json({ message: 'Server error' });
+              res.status(201).json({ message: 'Review added! Thank you!', review });
+            }
+          );
+        }
+      );
+    }
+  });
+};
 
 // DELETE /api/reviews/:id - Delete own review
 router.delete('/:id', auth, (req, res) => {

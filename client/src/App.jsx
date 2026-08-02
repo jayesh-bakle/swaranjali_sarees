@@ -15,6 +15,7 @@ import Wishlist from './pages/Wishlist'
 import Checkout from './pages/Checkout'
 import TrackOrder from './pages/TrackOrder'
 import Addresses from './pages/Addresses'
+import NotFound from './pages/NotFound'
 
 function App() {
   return (
@@ -35,6 +36,7 @@ function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/success" element={<Success />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
       <Footer />

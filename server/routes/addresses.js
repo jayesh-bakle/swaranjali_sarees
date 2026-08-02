@@ -28,6 +28,15 @@ router.post('/', auth, (req, res) => {
   if (!full_name || !phone || !address_line1 || !city || !state || !postal_code) {
     return res.status(400).json({ message: 'Please fill all required address fields' });
   }
+  // Basic format validation (Indian phone = 10 digits, PIN = 6 digits)
+  const phoneStr = String(phone).trim();
+  if (!/^[6-9]\d{9}$/.test(phoneStr)) {
+    return res.status(400).json({ message: 'Phone must be a valid 10-digit Indian mobile number' });
+  }
+  const pinStr = String(postal_code).trim();
+  if (!/^\d{6}$/.test(pinStr)) {
+    return res.status(400).json({ message: 'Postal code must be a valid 6-digit PIN' });
+  }
 
   const doInsert = (makeDefault) => {
     db.run(
@@ -61,7 +70,15 @@ router.post('/', auth, (req, res) => {
 // PUT /api/addresses/:id - Update address
 router.put('/:id', auth, (req, res) => {
   const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: 'Invalid address id' });
   const { full_name, phone, address_line1, address_line2, city, state, postal_code, country, is_default } = req.body;
+
+  if (phone && !/^[6-9]\d{9}$/.test(String(phone).trim())) {
+    return res.status(400).json({ message: 'Phone must be a valid 10-digit Indian mobile number' });
+  }
+  if (postal_code && !/^\d{6}$/.test(String(postal_code).trim())) {
+    return res.status(400).json({ message: 'Postal code must be a valid 6-digit PIN' });
+  }
 
   db.get('SELECT * FROM addresses WHERE id = ? AND user_id = ?', [id, req.user.id], (err, existing) => {
     if (err) return res.status(500).json({ message: 'Server error', error: err.message });

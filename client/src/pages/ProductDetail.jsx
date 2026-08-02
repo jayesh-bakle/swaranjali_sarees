@@ -4,6 +4,7 @@ import API from '../api/client'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import ProductCard from '../components/ProductCard'
+import Reviews from '../components/Reviews'
 import LoadingSpinner from '../components/LoadingSpinner'
 import toast from 'react-hot-toast'
 import { resolveImageUrl } from '../utils/imageUrl'
@@ -13,6 +14,7 @@ export default function ProductDetail() {
   const [product, setProduct] = useState(null)
   const [related, setRelated] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
   const [quantity, setQuantity] = useState(1)
   const { addItem } = useCart()
   const { isAdmin } = useAuth()
@@ -23,6 +25,7 @@ export default function ProductDetail() {
       try {
         const { data } = await API.get(`/products/${id}`)
         setProduct(data.product)
+        setError(false)
         window.scrollTo({ top: 0, behavior: 'smooth' })
 
         // Fetch related products in same category
@@ -32,6 +35,7 @@ export default function ProductDetail() {
         setRelated(relatedData.products.filter((p) => p.id !== data.product.id).slice(0, 4))
       } catch (err) {
         console.error('Error fetching product:', err)
+        setError(true)
       } finally {
         setLoading(false)
       }
@@ -43,6 +47,16 @@ export default function ProductDetail() {
     return <LoadingSpinner text="Loading product..." fullPage />
   }
 
+  if (error && !product) {
+    return (
+      <div className="container-app py-20 text-center">
+        <h2 className="font-display text-2xl text-slate-800 mb-4">Couldn't load this product</h2>
+        <p className="text-slate-500 mb-6">There was a problem reaching the store. Please try again.</p>
+        <Link to="/shop" className="btn-primary">Back to Shop</Link>
+      </div>
+    )
+  }
+
   if (!product) {
     return (
       <div className="container-app py-20 text-center">
@@ -52,8 +66,8 @@ export default function ProductDetail() {
     )
   }
 
-  const discount = product.sale_price
-    ? Math.round(((product.price - product.sale_price) / product.price) * 100)
+  const discount = product.sale_price && Number(product.price) > 0
+    ? Math.round(((Number(product.price) - Number(product.sale_price)) / Number(product.price)) * 100)
     : 0
 
   const imageUrl = resolveImageUrl(product.image_url)
@@ -85,7 +99,7 @@ export default function ProductDetail() {
                 <span className="badge-sale text-sm">SALE -{discount}%</span>
               </div>
             )}
-            {product.is_featured === 1 && (
+            {Number(product.is_featured) === 1 && (
               <div className="absolute bottom-4 left-4">
                 <span className="badge-featured">✨ Featured</span>
               </div>
@@ -194,6 +208,11 @@ export default function ProductDetail() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Reviews */}
+      <div className="mt-16">
+        <Reviews productId={product.id} />
       </div>
 
       {/* Related products */}

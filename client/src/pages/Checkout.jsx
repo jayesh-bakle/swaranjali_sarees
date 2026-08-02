@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import API from '../api/client'
@@ -18,12 +18,14 @@ export default function Checkout() {
   const { items, totalPrice, totalItems, savings, clearCart } = useCart()
   const { user, isAdmin } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [addresses, setAddresses] = useState([])
   const [selectedAddress, setSelectedAddress] = useState(null)
   const [showAddAddress, setShowAddAddress] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('cod')
   const [placing, setPlacing] = useState(false)
+  const [addrError, setAddrError] = useState(false)
 
   // New address form
   const [newAddress, setNewAddress] = useState({
@@ -43,8 +45,10 @@ export default function Checkout() {
       setAddresses(data.addresses || [])
       const defaultAddr = data.addresses?.find((a) => a.is_default) || data.addresses?.[0]
       setSelectedAddress(defaultAddr || null)
+      setAddrError(false)
     } catch (err) {
       console.error('Failed to fetch addresses:', err)
+      setAddrError(true)
     }
   }
 
@@ -52,7 +56,7 @@ export default function Checkout() {
     return (
       <div className="container-app py-10">
         <h1 className="font-display text-3xl font-semibold text-slate-900 mb-8">Checkout</h1>
-        <EmptyState icon="🔒" title="Please sign in to checkout" description="Login to place your order securely." actionText="Sign In" actionLink="/login" />
+        <EmptyState icon="🔒" title="Please sign in to checkout" description="Login to place your order securely." actionText="Sign In" actionLink="/login" actionState={{ from: location.pathname }} />
       </div>
     )
   }
@@ -92,7 +96,7 @@ export default function Checkout() {
     }
   }
 
-  const placeOrder = async (razorpayPayload = null) => {
+  const createOrder = async (paymentMethodServer) => {
     const shippingAddress = [
       selectedAddress.full_name,
       selectedAddress.address_line1,
@@ -101,13 +105,12 @@ export default function Checkout() {
       selectedAddress.country,
     ].filter(Boolean).join(', ')
 
+    // The server recomputes prices + total from the DB — the client total is never trusted
     const { data } = await API.post('/orders', {
-      items,
-      total: totalPrice,
+      items: items.map((i) => ({ id: i.id, quantity: i.quantity })),
       shipping_address: shippingAddress,
       phone: selectedAddress.phone,
-      payment_method: paymentMethod === 'online' ? 'razorpay' : 'cod',
-      payment_details: razorpayPayload,
+      payment_method: paymentMethodServer,
     })
     return data
   }
@@ -123,26 +126,21 @@ export default function Checkout() {
     })
   }
 
-  const handleRazorpayPayment = async () => {
+  // Order-first flow: the order already exists (payment pending). This Razorpay session
+  // pays for it, and /verify only marks it paid when the captured amount matches the total.
+  const handleRazorpayPayment = async (orderId, itemCount) => {
     setPlacing(true)
     try {
       await loadRazorpayScript()
 
-      // 1. Create a Razorpay order
-      const { data: rzpOrder } = await API.post('/payments/create-order', {
-        amount: totalPrice,
-        currency: 'INR',
-        receipt: 'rcpt_' + Date.now(),
-        notes: { userId: String(user.id) },
-      })
+      const { data: rzpOrder } = await API.post(`/payments/create-order-for-order/${orderId}`)
 
-      // 2. Open the Razorpay checkout dialog
       const options = {
         key: rzpOrder.key_id,
         amount: rzpOrder.amount, // paise
         currency: rzpOrder.currency || 'INR',
         name: 'Swaranjali Sarees',
-        description: `Order of ${totalItems} item${totalItems > 1 ? 's' : ''}`,
+        description: `Order #${orderId} — ${itemCount} item${itemCount > 1 ? 's' : ''}`,
         image: 'https://placehold.co/100x100/f59e0b/white?text=S',
         order_id: rzpOrder.order_id,
         prefill: {
@@ -152,29 +150,18 @@ export default function Checkout() {
         },
         handler: async (response) => {
           try {
-            // 3. Verify payment signature on server
-            const { data: verified } = await API.post('/payments/verify', {
+            // Verify signature + amount on the server — this marks the order paid
+            await API.post('/payments/verify', {
+              orderId,
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
             })
-
-            if (verified.verified) {
-              // 4. Place the order with payment confirmation
-              const data = await placeOrder({
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-              })
-              clearCart()
-              toast.success('🎉 Payment successful! Order placed.')
-              navigate(`/track-order/${data.order.id}`)
-            } else {
-              toast.error('Payment verification failed')
-            }
+            toast.success('🎉 Payment successful! Order confirmed.')
+            navigate(`/track-order/${orderId}`)
           } catch (err) {
             console.error('Verification error:', err)
-            toast.error('Payment verification failed. Please try again.')
+            toast.error(err.response?.data?.message || 'Payment verification failed. Your order is saved — you can retry from Order Details.')
           } finally {
             setPlacing(false)
           }
@@ -188,7 +175,7 @@ export default function Checkout() {
       const rzp = new window.Razorpay(options)
       rzp.on('payment.failed', (response) => {
         console.error('Payment failed:', response.error)
-        toast.error(response.error?.description || 'Payment failed. Please try again.')
+        toast.error(response.error?.description || 'Payment failed. Your order is saved — you can retry from Order Details.')
         setPlacing(false)
       })
       rzp.open()
@@ -205,22 +192,24 @@ export default function Checkout() {
       return
     }
 
-    if (paymentMethod === 'online') {
-      await handleRazorpayPayment()
-      return
-    }
-
-    // COD flow
+    const itemCount = totalItems
     setPlacing(true)
     try {
-      const data = await placeOrder()
-      clearCart()
-      toast.success('🎉 Order placed successfully!')
-      navigate(`/track-order/${data.order.id}`)
+      if (paymentMethod === 'online') {
+        // Order-first: create the order (payment pending, stock reserved), then pay against it.
+        // If payment is abandoned or fails, the order still exists and can be paid later or cancelled.
+        const { order } = await createOrder('razorpay')
+        clearCart()
+        await handleRazorpayPayment(order.id, itemCount)
+      } else {
+        const { order } = await createOrder('cod')
+        clearCart()
+        toast.success('🎉 Order placed successfully! Pay on delivery.')
+        navigate(`/track-order/${order.id}`)
+      }
     } catch (err) {
       console.error('Error placing order:', err)
       toast.error(err.response?.data?.message || 'Failed to place order. Please try again.')
-    } finally {
       setPlacing(false)
     }
   }
@@ -299,10 +288,19 @@ export default function Checkout() {
               </form>
             ) : addresses.length === 0 ? (
               <div className="text-center py-6">
-                <p className="text-slate-500 mb-4">No saved addresses yet.</p>
-                <button onClick={() => setShowAddAddress(true)} className="btn-secondary">
-                  + Add Your First Address
-                </button>
+                {addrError ? (
+                  <>
+                    <p className="text-slate-500 mb-4">Couldn't load your saved addresses.</p>
+                    <button onClick={fetchAddresses} className="btn-secondary">Retry</button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-slate-500 mb-4">No saved addresses yet.</p>
+                    <button onClick={() => setShowAddAddress(true)} className="btn-secondary">
+                      + Add Your First Address
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               <div className="space-y-3">

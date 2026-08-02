@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { resolveImageUrl } from '../utils/imageUrl'
+import { exportCSV } from '../utils/csv'
 
 const ORDER_STATUSES = ['pending', 'confirmed', 'processing', 'shipped', 'out_for_delivery', 'delivered', 'cancelled']
 const PAYMENT_STATUSES = ['pending', 'paid', 'failed', 'refunded']
@@ -34,6 +35,7 @@ export default function Admin() {
   const [users, setUsers] = useState([])
   const [trend, setTrend] = useState([])
   const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
 
   // Product form state
   const [showForm, setShowForm] = useState(false)
@@ -118,13 +120,20 @@ export default function Admin() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (submitting) return // prevent double-submit
     if (!form.name || !form.price || Number(form.stock) < 0) {
       toast.error('Please fill name, price, and valid stock')
+      return
+    }
+    const priceNum = Number(form.price)
+    if (form.sale_price && Number(form.sale_price) >= priceNum) {
+      toast.error('Sale price must be lower than the price')
       return
     }
     const formData = new FormData()
     Object.keys(form).forEach((key) => formData.append(key, form[key]))
 
+    setSubmitting(true)
     try {
       if (editingProduct) {
         if (imageFile) formData.append('image', imageFile)
@@ -143,6 +152,8 @@ export default function Admin() {
       fetchAll()
     } catch (err) {
       toast.error(err.response?.data?.message || 'Operation failed')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -158,7 +169,7 @@ export default function Admin() {
       size: product.size || 'U (6.3 m)',
       category: product.category || '',
       stock: product.stock,
-      is_featured: product.is_featured === 1
+      is_featured: Number(product.is_featured) === 1
     })
     setPreview(null)
     setImageFile(null)
@@ -232,6 +243,28 @@ export default function Admin() {
   const lowStockCount = products.filter((p) => p.stock <= 5).length
   const outOfStockCount = products.filter((p) => p.stock === 0).length
 
+  const handleExportProducts = () => {
+    exportCSV('products.csv',
+      ['ID', 'Name', 'Category', 'Fabric', 'Price', 'Sale Price', 'Stock', 'Featured'],
+      products.map((p) => ({
+        ID: p.id, Name: p.name, Category: p.category, Fabric: p.fabric,
+        Price: p.price, 'Sale Price': p.sale_price || '', Stock: p.stock, Featured: p.is_featured ? 'Yes' : 'No',
+      }))
+    )
+  }
+
+  const handleExportOrders = () => {
+    exportCSV('orders.csv',
+      ['Order ID', 'Customer', 'Status', 'Payment', 'Total', 'Date', 'Items'],
+      orders.map((o) => ({
+        'Order ID': o.id, Customer: o.customer_name || '', Status: o.status,
+        Payment: o.payment_status, Total: o.total,
+        Date: o.created_at || '',
+        Items: Array.isArray(o.items) ? o.items.map((i) => `${i.name} ×${i.quantity}`).join(' | ') : '',
+      }))
+    )
+  }
+
   const tabs = [
     { id: 'overview', label: '📊 Overview' },
     { id: 'products', label: '📦 Products' },
@@ -247,11 +280,19 @@ export default function Admin() {
           <h1 className="font-display text-2xl sm:text-3xl font-semibold text-slate-900">Seller Dashboard</h1>
           <p className="text-sm text-slate-500 mt-1">Manage products, inventory, orders & customers</p>
         </div>
-        {activeTab === 'products' && (
-          <button onClick={showForm ? resetForm : () => setShowForm(true)} className="btn-primary">
-            {showForm ? 'Cancel' : '+ Add Product'}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {activeTab === 'products' && (
+            <button onClick={handleExportProducts} className="btn-outline">⬇ Export CSV</button>
+          )}
+          {activeTab === 'orders' && (
+            <button onClick={handleExportOrders} className="btn-outline">⬇ Export CSV</button>
+          )}
+          {activeTab === 'products' && (
+            <button onClick={showForm ? resetForm : () => setShowForm(true)} className="btn-primary">
+              {showForm ? 'Cancel' : '+ Add Product'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -309,8 +350,8 @@ export default function Admin() {
                   <label htmlFor="is_featured" className="text-sm font-medium text-slate-700">Featured Product</label>
                 </div>
                 <div className="md:col-span-2 flex gap-3">
-                  <button type="submit" className="btn-primary flex-1 text-base py-3 mt-2">
-                    {editingProduct ? 'Save Changes' : 'Add Product'}
+                  <button type="submit" disabled={submitting} className="btn-primary flex-1 text-base py-3 mt-2">
+                    {submitting ? 'Saving...' : editingProduct ? 'Save Changes' : 'Add Product'}
                   </button>
                   {editingProduct && (
                     <button type="button" onClick={resetForm} className="btn-outline text-base py-3 mt-2">

@@ -15,102 +15,90 @@ const sanitizeUser = (user = {}) => ({
 });
 
 // POST /api/auth/register - Register a new user
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
   const { name, email, password } = req.body;
 
   // Validation
-  if (!name || !email || !password) {
+  if (!name || !String(name).trim()) {
+    return res.status(400).json({ message: 'Please provide your name' });
+  }
+  if (String(name).length > 60) {
+    return res.status(400).json({ message: 'Name must be 60 characters or fewer' });
+  }
+  if (!email || !password) {
     return res.status(400).json({ message: 'Please provide name, email, and password' });
   }
-  if (password.length < 6) {
-    return res.status(400).json({ message: 'Password must be at least 6 characters' });
+  if (password.length < 6 || password.length > 72) {
+    return res.status(400).json({ message: 'Password must be 6-72 characters' });
   }
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
     return res.status(400).json({ message: 'Please provide a valid email address' });
   }
 
-  // Check if user already exists
-  db.get('SELECT id FROM users WHERE email = ?', [email.toLowerCase()], (err, row) => {
-    if (err) {
-      return res.status(500).json({ message: 'Server error', error: err.message });
-    }
-    if (row) {
-      return res.status(409).json({ message: 'An account with this email already exists' });
-    }
+  const cleanName = String(name).trim();
+  const cleanEmail = String(email).trim().toLowerCase();
 
-    // Hash password and insert user
-    const salt = bcrypt.genSaltSync(10);
-    const passwordHash = bcrypt.hashSync(password, salt);
+  // Check if user already exists (best-effort; the UNIQUE constraint is the source of truth)
+  db.get('SELECT id FROM users WHERE email = ?', [cleanEmail], async (err, row) => {
+    if (err) return res.status(500).json({ message: 'Server error' });
+    if (row) return res.status(409).json({ message: 'An account with this email already exists' });
 
-    db.run(
-      'INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)',
-      [name, email.toLowerCase(), passwordHash],
-      function (insertErr) {
-        if (insertErr) {
-          return res.status(500).json({ message: 'Server error', error: insertErr.message });
+    try {
+      const passwordHash = await bcrypt.hash(password, 10); // async — doesn't block the event loop
+      db.run(
+        'INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)',
+        [cleanName, cleanEmail, passwordHash],
+        function (insertErr) {
+          if (insertErr) {
+            // Concurrent duplicate registration → the UNIQUE constraint fires → 409, not 500
+            if (insertErr.code === 'SQLITE_CONSTRAINT' || insertErr.message?.includes('UNIQUE')) {
+              return res.status(409).json({ message: 'An account with this email already exists' });
+            }
+            return res.status(500).json({ message: 'Server error' });
+          }
+
+          const userId = this.lastID;
+          const user = { id: userId, name: cleanName, email: cleanEmail, is_admin: 0, created_at: new Date().toISOString() };
+          const token = generateToken({ id: userId, email: cleanEmail, name: cleanName, is_admin: 0 });
+          res.status(201).json({ message: 'Account created successfully!', token, user: sanitizeUser(user) });
         }
-
-        const userId = this.lastID;
-        const user = {
-          id: userId,
-          name,
-          email: email.toLowerCase(),
-          is_admin: 0,
-          created_at: new Date().toISOString()
-        };
-
-        const token = generateToken({ id: userId, email: user.email, name, is_admin: 0 });
-        res.status(201).json({
-          message: 'Account created successfully!',
-          token,
-          user: sanitizeUser(user)
-        });
-      }
-    );
+      );
+    } catch (hashErr) {
+      return res.status(500).json({ message: 'Server error' });
+    }
   });
 });
 
 // POST /api/auth/login - Login user
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ message: 'Please provide email and password' });
   }
 
-  db.get('SELECT * FROM users WHERE email = ?', [email.toLowerCase()], (err, user) => {
-    if (err) {
-      return res.status(500).json({ message: 'Server error', error: err.message });
-    }
-    if (!user) {
-      return res.status(401).json({ message: 'Invalid email or password' });
-    }
+  db.get('SELECT * FROM users WHERE email = ?', [String(email).trim().toLowerCase()], async (err, user) => {
+    if (err) return res.status(500).json({ message: 'Server error' });
+    if (!user) return res.status(401).json({ message: 'Invalid email or password' });
 
-    // Compare password
-    const isMatch = bcrypt.compareSync(password, user.password_hash);
-    if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid email or password' });
-    }
+    try {
+      const isMatch = await bcrypt.compare(password, user.password_hash); // async
+      if (!isMatch) return res.status(401).json({ message: 'Invalid email or password' });
 
-    const token = generateToken(user);
-    res.json({
-      message: 'Login successful!',
-      token,
-      user: sanitizeUser(user)
-    });
+      const token = generateToken(user);
+      res.json({ message: 'Login successful!', token, user: sanitizeUser(user) });
+    } catch (_) {
+      return res.status(500).json({ message: 'Server error' });
+    }
   });
 });
 
 // GET /api/auth/me - Get current logged-in user
 router.get('/me', auth, (req, res) => {
   db.get('SELECT id, name, email, is_admin, created_at FROM users WHERE id = ?', [req.user.id], (err, user) => {
-    if (err) {
-      return res.status(500).json({ message: 'Server error', error: err.message });
-    }
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
+    if (err) return res.status(500).json({ message: 'Server error' });
+    if (!user) return res.status(404).json({ message: 'User not found' });
     res.json({ user: sanitizeUser(user) });
   });
 });
@@ -121,9 +109,7 @@ router.get('/users', auth, (req, res) => {
     return res.status(403).json({ message: 'Access denied. Admin only.' });
   }
   db.all('SELECT id, name, email, is_admin, created_at FROM users ORDER BY created_at DESC', (err, rows) => {
-    if (err) {
-      return res.status(500).json({ message: 'Server error', error: err.message });
-    }
+    if (err) return res.status(500).json({ message: 'Server error' });
     res.json({ users: rows.map(sanitizeUser) });
   });
 });

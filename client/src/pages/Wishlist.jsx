@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCart } from '../context/CartContext'
 import API from '../api/client'
@@ -11,8 +11,11 @@ import { resolveImageUrl } from '../utils/imageUrl'
 export default function Wishlist() {
   const { user, isAdmin } = useAuth()
   const { addItem } = useCart()
+  const location = useLocation()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+  const [movingId, setMovingId] = useState(null)
 
   useEffect(() => {
     if (!user) return
@@ -24,8 +27,10 @@ export default function Wishlist() {
     try {
       const { data } = await API.get('/wishlist')
       setItems(data.items || [])
+      setError(false)
     } catch (err) {
       console.error('Failed to fetch wishlist:', err)
+      setError(true)
     } finally {
       setLoading(false)
     }
@@ -34,7 +39,7 @@ export default function Wishlist() {
   const removeFromWishlist = async (productId) => {
     try {
       await API.delete(`/wishlist/${productId}`)
-      setItems(items.filter((item) => item.id !== productId))
+      setItems((prev) => prev.filter((item) => item.id !== productId))
       window.dispatchEvent(new Event('wishlist-updated'))
       toast('Removed from wishlist', { icon: '🗑️' })
     } catch (err) {
@@ -43,15 +48,26 @@ export default function Wishlist() {
   }
 
   const moveToCart = async (item) => {
-    addItem(item, 1)
-    await removeFromWishlist(item.id)
+    if (movingId) return // prevent double-submit
+    // Out-of-stock items can't go to the cart (matches ProductDetail behaviour)
+    if (!item.stock || item.stock <= 0) {
+      toast.error(`${item.name} is out of stock`)
+      return
+    }
+    setMovingId(item.id)
+    try {
+      addItem(item, 1)
+      await removeFromWishlist(item.id)
+    } finally {
+      setMovingId(null)
+    }
   }
 
   if (!user) {
     return (
       <div className="container-app py-10">
         <h1 className="font-display text-3xl font-semibold text-slate-900 mb-8">My Wishlist</h1>
-        <EmptyState icon="🔒" title="Please sign in" description="Login to view and manage your wishlist." actionText="Sign In" actionLink="/login" />
+        <EmptyState icon="🔒" title="Please sign in" description="Login to view and manage your wishlist." actionText="Sign In" actionLink="/login" actionState={{ from: location.pathname }} />
       </div>
     )
   }
@@ -70,6 +86,21 @@ export default function Wishlist() {
       <div className="container-app py-10">
         <h1 className="font-display text-3xl font-semibold text-slate-900 mb-8">My Wishlist</h1>
         <LoadingSpinner />
+      </div>
+    )
+  }
+
+  if (error && items.length === 0) {
+    return (
+      <div className="container-app py-10">
+        <h1 className="font-display text-3xl font-semibold text-slate-900 mb-8">My Wishlist</h1>
+        <EmptyState
+          icon="⚠️"
+          title="Couldn't load your wishlist"
+          description="There was a problem reaching the store. Please try again."
+          actionText="Retry"
+          actionHandler={fetchWishlist}
+        />
       </div>
     )
   }
@@ -136,8 +167,12 @@ export default function Wishlist() {
                   <span className="text-xs text-slate-400 line-through">₹{Number(item.price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                 )}
               </div>
-              <button onClick={() => moveToCart(item)} className="btn-primary w-full mt-3 text-sm py-2">
-                Move to Cart
+              <button
+                onClick={() => moveToCart(item)}
+                disabled={movingId !== null}
+                className="btn-primary w-full mt-3 text-sm py-2"
+              >
+                {movingId === item.id ? 'Moving...' : 'Move to Cart'}
               </button>
             </div>
           </div>

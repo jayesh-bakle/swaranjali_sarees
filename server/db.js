@@ -66,14 +66,14 @@ const SCHEMA = [
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     description TEXT,
-    price REAL NOT NULL,
-    sale_price REAL,
+    price REAL NOT NULL CHECK (price >= 0),
+    sale_price REAL CHECK (sale_price IS NULL OR (sale_price >= 0 AND sale_price < price)),
     fabric TEXT,
     color TEXT,
     size TEXT,
     category TEXT,
     image_url TEXT NOT NULL,
-    stock INTEGER DEFAULT 10,
+    stock INTEGER DEFAULT 10 CHECK (stock >= 0),
     is_featured INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`,
@@ -207,6 +207,10 @@ if (useTurso) {
     for (const sql of SCHEMA) {
       await execute(sql);
     }
+    // Enable foreign keys (best-effort — pragma support varies by libsql/Turso plan)
+    try {
+      await execute('PRAGMA foreign_keys = ON');
+    } catch (_) { /* ignore if unsupported */ }
     console.log('✅ Turso schema ready');
 
     // Seed admin
@@ -270,72 +274,106 @@ else {
     console.log('✅ Connected to local SQLite database');
   });
 
-  db.serialize(() => {
-    for (const sql of SCHEMA) {
-      db.run(sql);
-    }
-
-    // Add updated_at column to orders if missing (for existing DBs)
-    db.all('PRAGMA table_info(orders)', (err, columns) => {
-      if (!err && columns && !columns.some((c) => c.name === 'payment_status')) {
-        db.run(`ALTER TABLE orders ADD COLUMN payment_status TEXT DEFAULT 'pending'`);
-      }
-      if (!err && columns && !columns.some((c) => c.name === 'payment_method')) {
-        db.run(`ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT 'cod'`);
-      }
-      if (!err && columns && !columns.some((c) => c.name === 'updated_at')) {
-        db.run(`ALTER TABLE orders ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`);
-      }
-    });
+  // Safety net: fire-and-forget db.run() errors crash Node in sqlite3 mode if no listener exists.
+  db.on('error', (err) => {
+    console.error('⚠️ Unhandled SQLite error (non-fatal):', err.message);
   });
 
-  // Seed admin
-  db.get('SELECT id FROM users WHERE email = ?', ['admin@sarees.com'], (err, row) => {
-    if (err) {
-      console.error('Seed admin error:', err.message);
-      return;
-    }
-    if (!row) {
-      const passwordHash = bcrypt.hashSync('admin123', 10);
-      db.run(
-        'INSERT INTO users (name, email, password_hash, is_admin) VALUES (?, ?, ?, 1)',
-        ['Admin', 'admin@sarees.com', passwordHash],
-        (insertErr) => {
-          if (insertErr) console.error('Error seeding admin:', insertErr.message);
-          else console.log('👑 Admin user created: admin@sarees.com / admin123');
+  // Await schema + seeds before the server starts listening — fixes the startup race
+  // where a request arriving in the first milliseconds hit "no such table".
+  db.ready = (async () => {
+    // Create schema + run migrations
+    await new Promise((resolve, reject) => {
+      db.serialize(() => {
+        // Enforce foreign keys (wishlist/reviews/payments integrity)
+        db.run('PRAGMA foreign_keys = ON');
+        for (const sql of SCHEMA) {
+          db.run(sql);
         }
-      );
-    }
-  });
-
-  // Seed categories
-  db.get('SELECT COUNT(*) as count FROM categories', (err, row) => {
-    if (err) return;
-    if (row.count === 0) {
-      const stmt = db.prepare('INSERT INTO categories (name, description, image_url) VALUES (?, ?, ?)');
-      SEED_CATEGORIES.forEach((c) => stmt.run(c.name, c.description, c.image_url));
-      stmt.finalize();
-      console.log('🏷️ Seeded sample categories');
-    }
-  });
-
-  // Seed products
-  db.get('SELECT COUNT(*) as count FROM products', (err, row) => {
-    if (err) return;
-    if (row.count === 0) {
-      const stmt = db.prepare(
-        `INSERT INTO products (name, description, price, sale_price, fabric, color, size, category, image_url, stock, is_featured)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      );
-      SEED_PRODUCTS.forEach((p) => {
-        stmt.run(p.name, p.description, p.price, p.sale_price, p.fabric, p.color, p.size, p.category, p.image_url, p.stock, p.is_featured);
       });
-      stmt.finalize();
-      console.log('🌾 Seeded sample sarees');
-    }
-  });
 
-  db.ready = Promise.resolve();
+      // Add payment_status / payment_method / updated_at columns to orders if missing (existing DBs)
+      db.all('PRAGMA table_info(orders)', (err, columns) => {
+        if (err) return reject(err);
+        const alters = [];
+        if (columns && !columns.some((c) => c.name === 'payment_status')) {
+          alters.push(new Promise((r) => db.run(`ALTER TABLE orders ADD COLUMN payment_status TEXT DEFAULT 'pending'`, r)));
+        }
+        if (columns && !columns.some((c) => c.name === 'payment_method')) {
+          alters.push(new Promise((r) => db.run(`ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT 'cod'`, r)));
+        }
+        if (columns && !columns.some((c) => c.name === 'updated_at')) {
+          alters.push(new Promise((r) => db.run(`ALTER TABLE orders ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`, r)));
+        }
+        Promise.all(alters).then(resolve).catch(reject);
+      });
+    });
+
+    // Seed admin
+    await new Promise((resolve) => {
+      db.get('SELECT id FROM users WHERE email = ?', ['admin@sarees.com'], (err, row) => {
+        if (err) {
+          console.error('Seed admin error:', err.message);
+          return resolve();
+        }
+        if (row) return resolve();
+        const passwordHash = bcrypt.hashSync('admin123', 10);
+        db.run(
+          'INSERT INTO users (name, email, password_hash, is_admin) VALUES (?, ?, ?, 1)',
+          ['Admin', 'admin@sarees.com', passwordHash],
+          (insertErr) => {
+            if (insertErr) console.error('Error seeding admin:', insertErr.message);
+            else console.log('👑 Admin user created: admin@sarees.com / admin123');
+            resolve();
+          }
+        );
+      });
+    });
+
+    // Seed categories
+    await new Promise((resolve) => {
+      db.get('SELECT COUNT(*) as count FROM categories', (err, row) => {
+        if (err) return resolve();
+        if (row.count === 0) {
+          const stmt = db.prepare('INSERT INTO categories (name, description, image_url) VALUES (?, ?, ?)');
+          SEED_CATEGORIES.forEach((c) => stmt.run(c.name, c.description, c.image_url));
+          stmt.finalize(() => {
+            console.log('🏷️ Seeded sample categories');
+            resolve();
+          });
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    // Seed products
+    await new Promise((resolve) => {
+      db.get('SELECT COUNT(*) as count FROM products', (err, row) => {
+        if (err) return resolve();
+        if (row.count === 0) {
+          const stmt = db.prepare(
+            `INSERT INTO products (name, description, price, sale_price, fabric, color, size, category, image_url, stock, is_featured)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          );
+          SEED_PRODUCTS.forEach((p) => {
+            stmt.run(p.name, p.description, p.price, p.sale_price, p.fabric, p.color, p.size, p.category, p.image_url, p.stock, p.is_featured);
+          });
+          stmt.finalize(() => {
+            console.log('🌾 Seeded sample sarees');
+            resolve();
+          });
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    console.log('🚀 Local database ready');
+  })().catch((err) => {
+    console.error('❌ Local database initialization failed:', err.message);
+    process.exit(1);
+  });
 }
 
 module.exports = db;

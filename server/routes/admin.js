@@ -57,16 +57,18 @@ router.get('/revenue-trend', (req, res) => {
   );
 });
 
-// GET /api/admin/top-products - Top selling products
+// GET /api/admin/top-products - Top selling products (correlated per product)
 router.get('/top-products', (req, res) => {
   db.all(
     `SELECT p.id, p.name, p.image_url, p.price, p.stock,
-            SUM(CASE WHEN o.status != 'cancelled' THEN 1 ELSE 0 END) as orders_count,
-            COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN o.total ELSE 0 END), 0) as revenue
+            COUNT(DISTINCT o.id) as orders_count,
+            COALESCE(SUM(o.total), 0) as revenue
      FROM products p
      LEFT JOIN (
-       SELECT id, status, total FROM orders, json_each(orders.items) as items
-     ) o ON 1=1
+       SELECT DISTINCT o.id, o.status, o.total,
+              CAST(json_extract(item.value, '$.id') AS INTEGER) as product_id
+       FROM orders o, json_each(o.items) item
+     ) o ON o.product_id = p.id AND o.status != 'cancelled'
      GROUP BY p.id
      ORDER BY revenue DESC
      LIMIT 10`,
@@ -77,19 +79,31 @@ router.get('/top-products', (req, res) => {
   );
 });
 
-// GET /api/admin/recent-orders - Recent orders
+// GET /api/admin/recent-orders - Recent orders (safe JSON parse, paginated)
 router.get('/recent-orders', (req, res) => {
-  db.all(
-    `SELECT o.*, u.name as customer_name FROM orders o
-     JOIN users u ON u.id = o.user_id
-     ORDER BY o.created_at DESC
-     LIMIT 10`,
-    (err, rows) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
-      const orders = rows.map((o) => ({ ...o, items: JSON.parse(o.items) }));
-      res.json({ orders });
-    }
-  );
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 10));
+  const offset = (page - 1) * limit;
+
+  db.get('SELECT COUNT(*) as count FROM orders', (countErr, countRow) => {
+    if (countErr) return res.status(500).json({ message: 'Server error' });
+    db.all(
+      `SELECT o.*, u.name as customer_name FROM orders o
+       JOIN users u ON u.id = o.user_id
+       ORDER BY o.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [limit, offset],
+      (err, rows) => {
+        if (err) return res.status(500).json({ message: 'Server error' });
+        const orders = rows.map((o) => {
+          let items = [];
+          try { items = JSON.parse(o.items || '[]'); } catch (_) { items = []; }
+          return { ...o, items };
+        });
+        res.json({ orders, total: countRow?.count || 0, page, limit });
+      }
+    );
+  });
 });
 
 // GET /api/admin/inventory-report - Full inventory report
@@ -108,19 +122,28 @@ router.get('/inventory-report', (req, res) => {
   );
 });
 
-// GET /api/admin/users - All users (customers)
+// GET /api/admin/users - All users (customers), paginated
 router.get('/users', (req, res) => {
-  db.all(
-    `SELECT u.id, u.name, u.email, u.is_admin, u.created_at,
-            (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id) as order_count,
-            (SELECT COALESCE(SUM(total), 0) FROM orders o WHERE o.user_id = u.id AND o.status != 'cancelled') as total_spent
-     FROM users u
-     ORDER BY u.created_at DESC`,
-    (err, rows) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
-      res.json({ users: rows });
-    }
-  );
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+  const offset = (page - 1) * limit;
+
+  db.get('SELECT COUNT(*) as count FROM users', (countErr, countRow) => {
+    if (countErr) return res.status(500).json({ message: 'Server error' });
+    db.all(
+      `SELECT u.id, u.name, u.email, u.is_admin, u.created_at,
+              (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id) as order_count,
+              (SELECT COALESCE(SUM(total), 0) FROM orders o WHERE o.user_id = u.id AND o.status != 'cancelled') as total_spent
+       FROM users u
+       ORDER BY u.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [limit, offset],
+      (err, rows) => {
+        if (err) return res.status(500).json({ message: 'Server error' });
+        res.json({ users: rows, total: countRow?.count || 0, page, limit });
+      }
+    );
+  });
 });
 
 // GET /api/admin/category-report - Category-wise sales

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import API from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import LoadingSpinner from '../components/LoadingSpinner'
@@ -46,8 +46,10 @@ const loadRazorpayScript = () => {
 
 export default function Orders() {
   const { user } = useAuth()
+  const location = useLocation()
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
   const [payingOrderId, setPayingOrderId] = useState(null)
 
   useEffect(() => {
@@ -63,8 +65,10 @@ export default function Orders() {
     try {
       const { data } = await API.get('/orders')
       setOrders(data.orders)
+      setError(false)
     } catch (err) {
       console.error('Error fetching orders:', err)
+      setError(true)
     } finally {
       setLoading(false)
     }
@@ -150,7 +154,7 @@ export default function Orders() {
     return (
       <div className="container-app py-10">
         <h1 className="font-display text-3xl font-semibold text-slate-900 mb-8">My Orders</h1>
-        <EmptyState icon="🔒" title="Please sign in" description="Login to view your order history." actionText="Sign In" actionLink="/login" />
+        <EmptyState icon="🔒" title="Please sign in" description="Login to view your order history." actionText="Sign In" actionLink="/login" actionState={{ from: location.pathname }} />
       </div>
     )
   }
@@ -165,7 +169,15 @@ export default function Orders() {
         My Orders <span className="text-lg text-slate-400 font-normal">({orders.length})</span>
       </h1>
 
-      {orders.length === 0 ? (
+      {error && orders.length === 0 ? (
+        <EmptyState
+          icon="⚠️"
+          title="Couldn't load your orders"
+          description="There was a problem reaching the store. Please try again."
+          actionText="Retry"
+          actionHandler={fetchOrders}
+        />
+      ) : orders.length === 0 ? (
         <EmptyState
           icon="📦"
           title="No orders yet"

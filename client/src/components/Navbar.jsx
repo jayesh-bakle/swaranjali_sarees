@@ -10,7 +10,15 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [wishlistCount, setWishlistCount] = useState(0)
+  const [searchQuery, setSearchQuery] = useState('')
   const navigate = useNavigate()
+
+  const handleSearch = (e) => {
+    e.preventDefault()
+    const q = searchQuery.trim()
+    navigate(q ? `/shop?search=${encodeURIComponent(q)}` : '/shop')
+    setMobileOpen(false)
+  }
 
   useEffect(() => {
     const fetchWishlistCount = async () => {
@@ -78,6 +86,23 @@ export default function Navbar() {
             </NavLink>
           )}
         </div>
+
+        {/* Search — desktop */}
+        <form onSubmit={handleSearch} className="hidden lg:flex items-center flex-1 max-w-xs mx-4">
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search sarees…"
+            className="input !py-1.5 text-sm"
+            aria-label="Search products"
+          />
+          <button type="submit" className="-ml-10 p-1.5 text-slate-400 hover:text-primary-700" aria-label="Submit search">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </button>
+        </form>
 
         {/* Right side */}
         <div className="flex items-center gap-1">
@@ -180,6 +205,21 @@ export default function Navbar() {
       {/* Mobile menu */}
       {mobileOpen && (
         <div className="md:hidden bg-white border-t border-slate-100 px-4 py-3 space-y-1 animate-fade-in">
+          <form onSubmit={handleSearch} className="flex items-center pb-2">
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search sarees…"
+              className="input !py-1.5 text-sm"
+              aria-label="Search products"
+            />
+            <button type="submit" className="-ml-10 p-1.5 text-slate-400 hover:text-primary-700" aria-label="Submit search">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
+          </form>
           <NavLink to="/" className={linkClass} onClick={() => setMobileOpen(false)} end>
             Home
           </NavLink>

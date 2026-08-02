@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import API from '../api/client'
 import EmptyState from '../components/EmptyState'
@@ -12,6 +13,7 @@ const emptyForm = {
 
 export default function Addresses() {
   const { user } = useAuth()
+  const location = useLocation()
   const [addresses, setAddresses] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -97,7 +99,7 @@ export default function Addresses() {
     return (
       <div className="container-app py-10">
         <h1 className="font-display text-3xl font-semibold text-slate-900 mb-8">My Addresses</h1>
-        <EmptyState icon="🔒" title="Please sign in" description="Login to manage your saved addresses." actionText="Sign In" actionLink="/login" />
+        <EmptyState icon="🔒" title="Please sign in" description="Login to manage your saved addresses." actionText="Sign In" actionLink="/login" actionState={{ from: location.pathname }} />
       </div>
     )
   }

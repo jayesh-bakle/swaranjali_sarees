@@ -23,18 +23,24 @@ router.post('/:productId', auth, (req, res) => {
   const productId = Number(req.params.productId);
   if (!productId) return res.status(400).json({ message: 'Invalid product id' });
 
-  db.run(
-    'INSERT OR IGNORE INTO wishlist (user_id, product_id) VALUES (?, ?)',
-    [req.user.id, productId],
-    function (err) {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
-      const added = this.changes > 0;
-      res.status(added ? 201 : 200).json({
-        message: added ? 'Added to wishlist!' : 'Already in wishlist',
-        inWishlist: true
-      });
-    }
-  );
+  // The product must exist — otherwise (FKs now enforced) we'd get a 500, or an orphan row
+  db.get('SELECT id FROM products WHERE id = ?', [productId], (pErr, product) => {
+    if (pErr) return res.status(500).json({ message: 'Server error' });
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    db.run(
+      'INSERT OR IGNORE INTO wishlist (user_id, product_id) VALUES (?, ?)',
+      [req.user.id, productId],
+      function (err) {
+        if (err) return res.status(500).json({ message: 'Server error' });
+        const added = this.changes > 0;
+        res.status(added ? 201 : 200).json({
+          message: added ? 'Added to wishlist!' : 'Already in wishlist',
+          inWishlist: true
+        });
+      }
+    );
+  });
 });
 
 // DELETE /api/wishlist/:productId - Remove from wishlist

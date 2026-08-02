@@ -2,13 +2,29 @@ const express = require('express');
 const db = require('../db');
 const { auth } = require('../middleware/auth');
 const { appendOrderToSheet } = require('../utils/googleSheet');
+const { sendOrderConfirmation } = require('../utils/email');
+const { issueRefund } = require('../utils/razorpay');
 
 const router = express.Router();
 
 const ORDER_STATUSES = ['pending', 'confirmed', 'processing', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'];
 const PAYMENT_STATUSES = ['pending', 'paid', 'failed', 'refunded'];
+const PAYMENT_METHODS = ['cod', 'cash', 'razorpay'];
 
-// Helper: Add tracking timeline entry
+// Allowed status transitions (cancelled & delivered are terminal)
+const STATUS_TRANSITIONS = {
+  pending: ['confirmed', 'cancelled'],
+  confirmed: ['processing', 'shipped', 'cancelled'],
+  processing: ['shipped', 'cancelled'],
+  shipped: ['out_for_delivery', 'cancelled'],
+  out_for_delivery: ['delivered'],
+  delivered: [],
+  cancelled: [],
+};
+
+const MAX_QUANTITY = 50; // per line-item sanity cap
+
+// Helper: Add tracking timeline entry (never crashes the request)
 const addTracking = (orderId, status, note = '', location = '') => {
   db.run(
     'INSERT INTO order_tracking (order_id, status, note, location) VALUES (?, ?, ?, ?)',
@@ -19,10 +35,48 @@ const addTracking = (orderId, status, note = '', location = '') => {
   );
 };
 
-// Helper: Get order with items parsed
+// Helper: Get order with items parsed safely (malformed JSON must never crash the process)
 const formatOrder = (order) => {
   if (!order) return null;
-  return { ...order, items: JSON.parse(order.items) };
+  let items = [];
+  try {
+    items = JSON.parse(order.items || '[]');
+  } catch (_) {
+    items = [];
+  }
+  return { ...order, items };
+};
+
+// Validate + normalize an items payload into [{ id, quantity }] with duplicates merged
+const normalizeItems = (rawItems) => {
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    return { error: 'Order must contain at least one item' };
+  }
+  const merged = new Map();
+  for (const raw of rawItems) {
+    const id = Number(raw && raw.id);
+    const quantity = Number(raw && raw.quantity);
+    if (!Number.isInteger(id) || id <= 0) {
+      return { error: 'Each item must have a valid product id' };
+    }
+    if (!Number.isInteger(quantity) || quantity <= 0 || quantity > MAX_QUANTITY) {
+      return { error: `Quantity must be a whole number between 1 and ${MAX_QUANTITY}` };
+    }
+    merged.set(id, (merged.get(id) || 0) + quantity);
+  }
+  return { items: [...merged.entries()].map(([id, quantity]) => ({ id, quantity })) };
+};
+
+// Restore stock for a set of items (rolls back a partially-created order)
+const restoreStock = (items, cb) => {
+  let i = 0;
+  const step = (err) => {
+    if (err) console.error('Stock restore error:', err.message);
+    if (i >= items.length) return cb();
+    const item = items[i++];
+    db.run('UPDATE products SET stock = stock + ? WHERE id = ?', [item.quantity, item.id], step);
+  };
+  step(null);
 };
 
 // POST /api/orders - Create a new order (regular users only)
@@ -32,118 +86,150 @@ router.post('/', auth, (req, res) => {
     return res.status(403).json({ message: 'Admins manage the store. Only customers can place orders.' });
   }
 
-  const { items, total, shipping_address, phone, payment_method, payment_details } = req.body;
+  const { shipping_address, phone, payment_method } = req.body;
 
-  if (!items || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ message: 'Order must contain at least one item' });
-  }
-  if (!total || total <= 0) {
-    return res.status(400).json({ message: 'Invalid order total' });
-  }
-  if (!shipping_address) {
+  if (!shipping_address || !String(shipping_address).trim()) {
     return res.status(400).json({ message: 'Shipping address is required' });
   }
 
-  const paymentMethod = payment_method || 'cod'; // cod = Cash on Delivery
-  const paymentStatus = paymentMethod === 'cod' ? 'pending' : 'paid';
-  const orderStatus = paymentMethod === 'cod' ? 'confirmed' : 'confirmed';
+  const paymentMethod = (payment_method || 'cod').toLowerCase();
+  if (!PAYMENT_METHODS.includes(paymentMethod)) {
+    return res.status(400).json({ message: `payment_method must be one of: ${PAYMENT_METHODS.join(', ')}` });
+  }
 
-  // First check stock availability for all items
-  const checkStock = (index) => {
-    if (index >= items.length) {
-      // All items checked — proceed with order
-      db.run(
-        `INSERT INTO orders (user_id, items, total, shipping_address, phone, status, payment_status, payment_method)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [req.user.id, JSON.stringify(items), parseFloat(total), shipping_address, phone || '', orderStatus, paymentStatus, paymentMethod],
-        function (err) {
-          if (err) {
-            return res.status(500).json({ message: 'Server error', error: err.message });
-          }
+  const normalized = normalizeItems(req.body.items);
+  if (normalized.error) return res.status(400).json({ message: normalized.error });
+  const items = normalized.items;
 
-          const orderId = this.lastID;
-          addTracking(orderId, orderStatus, paymentMethod === 'cod' ? 'Order placed. Pay on delivery.' : 'Order placed and paid.');
+  // Fetch authoritative prices + names from the DB (client prices are never trusted)
+  db.all(
+    `SELECT id, name, price, sale_price, stock FROM products WHERE id IN (${items.map(() => '?').join(',')})`,
+    items.map((i) => i.id),
+    (err, rows) => {
+      if (err) return res.status(500).json({ message: 'Server error' });
 
-          // Append order to Google Sheet (fire-and-forget, never blocks response)
-          db.get('SELECT name, email FROM users WHERE id = ?', [req.user.id], (userErr, userRow) => {
-            appendOrderToSheet(
-              { ...JSON.parse(JSON.stringify({ id: orderId, phone: phone || '', shipping_address, payment_method: paymentMethod, payment_status: paymentStatus, status: orderStatus, total: parseFloat(total) })) },
-              items,
-              userRow || {}
-            ).catch(() => {}); // ensure no unhandled rejection
-          });
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      const missing = items.find((i) => !byId.has(i.id));
+      if (missing) {
+        return res.status(400).json({ message: `Product not found: id ${missing.id}` });
+      }
 
-          // Record payment if not COD
-          if (paymentMethod !== 'cod' && paymentMethod !== 'cash') {
-            // Use the real Razorpay payment/order ID when available, otherwise generate a reference
-            const rzpPaymentId = payment_details?.razorpay_payment_id;
-            const transactionId = rzpPaymentId || 'TXN-' + Date.now() + '-' + Math.round(Math.random() * 1e6);
-            db.run(
-              'INSERT INTO payments (order_id, user_id, amount, method, status, transaction_id, payment_details) VALUES (?, ?, ?, ?, ?, ?, ?)',
-              [orderId, req.user.id, parseFloat(total), paymentMethod, 'completed', transactionId, payment_details ? JSON.stringify(payment_details) : null],
-              (payErr) => {
-                if (payErr) console.error('Payment insert error:', payErr.message);
-              }
-            );
-          }
+      const overStock = items.find((i) => byId.get(i.id).stock < i.quantity);
+      if (overStock) {
+        const p = byId.get(overStock.id);
+        return res.status(400).json({ message: `Not enough stock for ${p.name}. Only ${p.stock} left.` });
+      }
 
-          // Decrement stock for each item
-          const updateStock = (i) => {
-            if (i >= items.length) {
-              return db.get('SELECT * FROM orders WHERE id = ?', [orderId], (getErr, order) => {
-                if (getErr) return res.status(500).json({ message: 'Server error', error: getErr.message });
-                res.status(201).json({
-                  message: 'Order placed successfully!',
-                  order: formatOrder(order)
-                });
-              });
-            }
-            const item = items[i];
-            db.run('UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?', [item.quantity, item.id, item.quantity], (updateErr) => {
-              if (updateErr) return res.status(500).json({ message: 'Server error', error: updateErr.message });
-              updateStock(i + 1);
-            });
+      // Reserve stock with an atomic guarded update. If any line loses the race,
+      // release everything already reserved and reject the whole order.
+      const reserved = [];
+      let i = 0;
+
+      const createOrder = () => {
+        // Recompute the total from server-side prices
+        const total = items.reduce((sum, item) => {
+          const p = byId.get(item.id);
+          return sum + (p.sale_price != null ? p.sale_price : p.price) * item.quantity;
+        }, 0);
+
+        // Razorpay orders start 'pending' — they're only marked paid after a verified payment.
+        const orderStatus = paymentMethod === 'razorpay' ? 'pending' : 'confirmed';
+        const orderItems = items.map((item) => {
+          const p = byId.get(item.id);
+          return {
+            id: p.id,
+            name: p.name,
+            price: p.sale_price != null ? p.sale_price : p.price,
+            quantity: item.quantity,
           };
-          updateStock(0);
+        });
+
+        db.run(
+          `INSERT INTO orders (user_id, items, total, shipping_address, phone, status, payment_status, payment_method)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [req.user.id, JSON.stringify(orderItems), total, String(shipping_address).trim(), phone || '', orderStatus, 'pending', paymentMethod],
+          function (insertErr) {
+            if (insertErr) {
+              restoreStock(items, () => res.status(500).json({ message: 'Server error' }));
+              return;
+            }
+
+            const orderId = this.lastID;
+            addTracking(orderId, orderStatus, paymentMethod === 'cod' ? 'Order placed. Pay on delivery.' : 'Order placed. Awaiting payment confirmation.');
+
+            // Best-effort order logging + email (never blocks or fails the request)
+            db.get('SELECT name, email FROM users WHERE id = ?', [req.user.id], (userErr, userRow) => {
+              appendOrderToSheet(
+                { id: orderId, phone: phone || '', shipping_address, payment_method: paymentMethod, payment_status: 'pending', status: orderStatus, total },
+                orderItems,
+                userRow || {}
+              ).catch(() => {});
+              sendOrderConfirmation({ order: { id: orderId, total, payment_method: paymentMethod }, items: orderItems, customer: userRow || {} });
+            });
+
+            db.get('SELECT * FROM orders WHERE id = ?', [orderId], (getErr, order) => {
+              if (getErr) return res.status(500).json({ message: 'Server error' });
+              res.status(201).json({ message: 'Order placed successfully!', order: formatOrder(order) });
+            });
+          }
+        );
+      };
+
+      const reserveNext = (updateErr, changes) => {
+        if (updateErr) {
+          restoreStock(reserved, () => res.status(500).json({ message: 'Server error' }));
+          return;
         }
-      );
-      return;
+        if (i > 0 && changes === 0) {
+          // This line lost the race — release what we reserved
+          const failed = items[i - 1];
+          restoreStock(reserved, () => {
+            const p = byId.get(failed.id);
+            return res.status(400).json({ message: `Not enough stock for ${p.name}. Only ${p.stock} left.` });
+          });
+          return;
+        }
+        if (i >= items.length) return createOrder();
+        const item = items[i++];
+        db.run(
+          'UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?',
+          [item.quantity, item.id, item.quantity],
+          function (e) {
+            if (!e && this.changes === 1) reserved.push(item);
+            reserveNext(e, this.changes);
+          }
+        );
+      };
+
+      reserveNext(null, 0);
     }
-
-    const item = items[index];
-    db.get('SELECT stock FROM products WHERE id = ?', [item.id], (err, row) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
-      if (!row) {
-        return res.status(400).json({ message: `Product not found in stock: ${item.name}` });
-      }
-      if (row.stock < item.quantity) {
-        return res.status(400).json({ message: `Not enough stock for ${item.name}. Only ${row.stock} left.` });
-      }
-      checkStock(index + 1);
-    });
-  };
-
-  checkStock(0);
+  );
 });
 
-// GET /api/orders - Get my orders (regular users)
+// GET /api/orders - Get my orders (regular users), all orders for admins
 router.get('/', auth, (req, res) => {
-  let sql = 'SELECT * FROM orders WHERE 1=1';
-  const params = [];
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+  const offset = (page - 1) * limit;
 
+  let where = '1=1';
+  const params = [];
   if (!req.user.is_admin) {
-    sql += ' AND user_id = ?';
+    where += ' AND user_id = ?';
     params.push(req.user.id);
   }
 
-  sql += ' ORDER BY created_at DESC';
-
-  db.all(sql, params, (err, rows) => {
-    if (err) {
-      return res.status(500).json({ message: 'Server error', error: err.message });
-    }
-    const orders = rows.map(formatOrder);
-    res.json({ orders });
+  db.get(`SELECT COUNT(*) as count FROM orders WHERE ${where}`, params, (countErr, countRow) => {
+    if (countErr) return res.status(500).json({ message: 'Server error' });
+    db.all(
+      `SELECT * FROM orders WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      [...params, limit, offset],
+      (err, rows) => {
+        if (err) return res.status(500).json({ message: 'Server error' });
+        const orders = rows.map(formatOrder);
+        res.json({ orders, total: countRow?.count || 0, page, limit });
+      }
+    );
   });
 });
 
@@ -152,18 +238,24 @@ router.get('/all', auth, (req, res) => {
   if (!req.user.is_admin) {
     return res.status(403).json({ message: 'Access denied. Admin only.' });
   }
-  db.all(
-    `SELECT o.*, u.name as customer_name, u.email as customer_email FROM orders o
-     JOIN users u ON u.id = o.user_id
-     ORDER BY o.created_at DESC`,
-    (err, rows) => {
-      if (err) {
-        return res.status(500).json({ message: 'Server error', error: err.message });
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+  const offset = (page - 1) * limit;
+
+  db.get('SELECT COUNT(*) as count FROM orders', (countErr, countRow) => {
+    if (countErr) return res.status(500).json({ message: 'Server error' });
+    db.all(
+      `SELECT o.*, u.name as customer_name, u.email as customer_email FROM orders o
+       JOIN users u ON u.id = o.user_id
+       ORDER BY o.created_at DESC LIMIT ? OFFSET ?`,
+      [limit, offset],
+      (err, rows) => {
+        if (err) return res.status(500).json({ message: 'Server error' });
+        const orders = rows.map(formatOrder);
+        res.json({ orders, total: countRow?.count || 0, page, limit });
       }
-      const orders = rows.map(formatOrder);
-      res.json({ orders });
-    }
-  );
+    );
+  });
 });
 
 // GET /api/orders/:id - Get single order with tracking (own order or admin)
@@ -172,7 +264,7 @@ router.get('/:id', auth, (req, res) => {
   if (!id) return res.status(400).json({ message: 'Invalid order id' });
 
   db.get('SELECT * FROM orders WHERE id = ?', [id], (err, order) => {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+    if (err) return res.status(500).json({ message: 'Server error' });
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
     // Regular users can only access their own orders
@@ -180,18 +272,15 @@ router.get('/:id', auth, (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    // Get tracking timeline
     db.all('SELECT * FROM order_tracking WHERE order_id = ? ORDER BY updated_at ASC', [id], (trackErr, tracking) => {
-      if (trackErr) return res.status(500).json({ message: 'Server error', error: trackErr.message });
+      if (trackErr) return res.status(500).json({ message: 'Server error' });
 
-      // Get payment info if available
       db.all('SELECT * FROM payments WHERE order_id = ?', [id], (payErr, payments) => {
-        if (payErr) return res.status(500).json({ message: 'Server error', error: payErr.message });
+        if (payErr) return res.status(500).json({ message: 'Server error' });
 
-        // Get customer info for admin
         if (req.user.is_admin) {
           db.get('SELECT id, name, email FROM users WHERE id = ?', [order.user_id], (userErr, customer) => {
-            if (userErr) return res.status(500).json({ message: 'Server error', error: userErr.message });
+            if (userErr) return res.status(500).json({ message: 'Server error' });
             res.json({ order: formatOrder(order), tracking, payments, customer });
           });
         } else {
@@ -205,12 +294,13 @@ router.get('/:id', auth, (req, res) => {
 // PUT /api/orders/cancel/:id - Cancel own order (customer)
 router.put('/cancel/:id', auth, (req, res) => {
   const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: 'Invalid order id' });
   if (req.user.is_admin) {
     return res.status(403).json({ message: 'Customers can cancel orders. Admins should update status from admin panel.' });
   }
 
   db.get('SELECT * FROM orders WHERE id = ? AND user_id = ?', [id, req.user.id], (err, existingOrder) => {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+    if (err) return res.status(500).json({ message: 'Server error' });
     if (!existingOrder) return res.status(404).json({ message: 'Order not found' });
 
     const cancellable = ['pending', 'confirmed', 'processing'];
@@ -218,27 +308,23 @@ router.put('/cancel/:id', auth, (req, res) => {
       return res.status(400).json({ message: `Order cannot be cancelled in "${existingOrder.status}" status` });
     }
 
-    // Restore stock
-    const orderItems = JSON.parse(existingOrder.items);
-    const restoreStock = (i) => {
-      if (i >= orderItems.length) {
-        db.run('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['cancelled', id], (updateErr) => {
-          if (updateErr) return res.status(500).json({ message: 'Server error', error: updateErr.message });
-          addTracking(id, 'cancelled', 'Order cancelled by customer.');
-          db.run('UPDATE orders SET payment_status = ? WHERE id = ? AND payment_status = ?', ['refunded', id, 'paid']);
-          db.get('SELECT * FROM orders WHERE id = ?', [id], (getErr, order) => {
-            res.json({ message: 'Order cancelled!', order: formatOrder(order) });
-          });
+    const orderItems = formatOrder(existingOrder).items;
+    restoreStock(orderItems, () => {
+      db.run('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['cancelled', id], (updateErr) => {
+        if (updateErr) return res.status(500).json({ message: 'Server error' });
+        addTracking(id, 'cancelled', 'Order cancelled by customer.');
+
+        if (existingOrder.payment_status === 'paid') {
+          // Issue a real refund (works in Razorpay test mode when keys are set)
+          issueRefund(id, existingOrder.total, existingOrder.user_id).catch(() => {});
+          db.run('UPDATE orders SET payment_status = ? WHERE id = ?', ['refunded', id], () => {});
+        }
+
+        db.get('SELECT * FROM orders WHERE id = ?', [id], (getErr, order) => {
+          res.json({ message: 'Order cancelled!', order: formatOrder(order) });
         });
-        return;
-      }
-      const item = orderItems[i];
-      db.run('UPDATE products SET stock = stock + ? WHERE id = ?', [item.quantity, item.id], (updateErr) => {
-        if (updateErr) return res.status(500).json({ message: 'Server error', error: updateErr.message });
-        restoreStock(i + 1);
       });
-    };
-    restoreStock(0);
+    });
   });
 });
 
@@ -255,44 +341,43 @@ router.put('/:id/status', auth, (req, res) => {
     return res.status(400).json({ message: `Status must be one of: ${ORDER_STATUSES.join(', ')}` });
   }
 
-  // When an order is cancelled, restore the stock
   db.get('SELECT * FROM orders WHERE id = ?', [id], (getOrderErr, existingOrder) => {
-    if (getOrderErr) return res.status(500).json({ message: 'Server error', error: getOrderErr.message });
+    if (getOrderErr) return res.status(500).json({ message: 'Server error' });
     if (!existingOrder) return res.status(404).json({ message: 'Order not found' });
 
-    const wasCancelled = existingOrder.status === 'cancelled';
+    // Enforce a sane state machine — cancelled & delivered are terminal
+    if (existingOrder.status !== status && !(STATUS_TRANSITIONS[existingOrder.status] || []).includes(status)) {
+      return res.status(400).json({
+        message: `Cannot move order from "${existingOrder.status}" to "${status}"`,
+      });
+    }
+
     const isNowCancelled = status === 'cancelled';
 
     db.run('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, id], (err) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+      if (err) return res.status(500).json({ message: 'Server error' });
 
-      // Add tracking entry
       let statusNote = note || '';
       if (status === 'shipped' && !statusNote) statusNote = 'Order shipped from warehouse.';
       if (status === 'out_for_delivery' && !statusNote) statusNote = 'Out for delivery.';
       if (status === 'delivered' && !statusNote) statusNote = 'Delivered successfully.';
+      if (status === 'cancelled' && !statusNote) statusNote = 'Order cancelled by admin.';
       addTracking(id, status, statusNote, location || '');
 
-      // Restore stock when order is cancelled (if it wasn't already cancelled)
-      if (isNowCancelled && !wasCancelled) {
-        const orderItems = JSON.parse(existingOrder.items);
-        const restoreStock = (i) => {
-          if (i >= orderItems.length) {
-            return db.get('SELECT * FROM orders WHERE id = ?', [id], (getErr, order) => {
-              if (getErr) return res.status(500).json({ message: 'Server error', error: getErr.message });
-              res.json({ message: 'Order updated successfully!', order: formatOrder(order) });
-            });
+      if (isNowCancelled && existingOrder.status !== 'cancelled') {
+        // Restore stock and issue a real refund if the order was paid
+        const orderItems = formatOrder(existingOrder).items;
+        restoreStock(orderItems, () => {
+          if (existingOrder.payment_status === 'paid') {
+            issueRefund(id, existingOrder.total, existingOrder.user_id).catch(() => {});
+            db.run('UPDATE orders SET payment_status = ? WHERE id = ?', ['refunded', id], () => {});
           }
-          const item = orderItems[i];
-          db.run('UPDATE products SET stock = stock + ? WHERE id = ?', [item.quantity, item.id], (updateErr) => {
-            if (updateErr) return res.status(500).json({ message: 'Server error', error: updateErr.message });
-            restoreStock(i + 1);
+          db.get('SELECT * FROM orders WHERE id = ?', [id], (getErr, order) => {
+            res.json({ message: 'Order updated successfully!', order: formatOrder(order) });
           });
-        };
-        restoreStock(0);
+        });
       } else {
         db.get('SELECT * FROM orders WHERE id = ?', [id], (getErr, order) => {
-          if (getErr) return res.status(500).json({ message: 'Server error', error: getErr.message });
           res.json({ message: 'Order updated successfully!', order: formatOrder(order) });
         });
       }
@@ -314,11 +399,11 @@ router.put('/:id/payment', auth, (req, res) => {
   }
 
   db.get('SELECT * FROM orders WHERE id = ?', [id], (err, order) => {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+    if (err) return res.status(500).json({ message: 'Server error' });
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
     db.run('UPDATE orders SET payment_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [payment_status, id], (updateErr) => {
-      if (updateErr) return res.status(500).json({ message: 'Server error', error: updateErr.message });
+      if (updateErr) return res.status(500).json({ message: 'Server error' });
       db.get('SELECT * FROM orders WHERE id = ?', [id], (getErr, updated) => {
         res.json({ message: 'Payment status updated!', order: formatOrder(updated) });
       });

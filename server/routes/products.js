@@ -29,6 +29,9 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+const MIME_EXT = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif' };
+const IMAGE_MIME = new Set(Object.keys(MIME_EXT));
+
 // Configure multer for image uploads — memory storage so we can push to Cloudinary.
 // In local mode (no Cloudinary env vars) we fall back to disk storage as before.
 const storage = useCloudinary
@@ -36,8 +39,9 @@ const storage = useCloudinary
   : multer.diskStorage({
       destination: (req, file, cb) => cb(null, uploadsDir),
       filename: (req, file, cb) => {
+        // Never trust the client filename/extension — derive a safe one from the mimetype
         const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        const ext = path.extname(file.originalname) || '.jpg';
+        const ext = MIME_EXT[file.mimetype] || '.jpg';
         cb(null, `product-${unique}${ext}`);
       }
     });
@@ -46,14 +50,33 @@ const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: (req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    if (allowed.includes(file.mimetype)) {
+    if (IMAGE_MIME.has(file.mimetype)) {
       cb(null, true);
     } else {
       cb(new Error('Only image files (JPEG, PNG, WEBP, GIF) are allowed'));
     }
   }
 });
+
+// Verify a local upload is a real image by its magic bytes (mimetypes are client-controlled).
+const assertLocalImage = (filePath) => {
+  const head = fs.readFileSync(filePath).subarray(0, 12);
+  const signatures = [
+    { ext: '.jpg', bytes: [0xff, 0xd8, 0xff] },
+    { ext: '.png', bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
+    { ext: '.gif', bytes: [0x47, 0x49, 0x46, 0x38] }, // "GIF8"
+    { ext: '.webp', bytes: [0x52, 0x49, 0x46, 0x46] }, // "RIFF" — WEBP containers start with RIFF....WEBP
+  ];
+  const ok = signatures.some((s) => s.bytes.every((b, i) => head[i] === b));
+  if (!ok) throw new Error('Uploaded file is not a valid image');
+};
+
+// Remove the locally-saved file for a failed upload (no-op in Cloudinary mode)
+const cleanupUploaded = (req) => {
+  if (!useCloudinary && req.file && req.file.path) {
+    try { fs.unlinkSync(req.file.path); } catch (_) { /* already gone */ }
+  }
+};
 
 // Upload an image buffer to Cloudinary. Returns the secure CDN URL.
 // Falls back to a local file path if Cloudinary is not configured.
@@ -66,7 +89,8 @@ const uploadImage = async (file) => {
     });
     return result.secure_url;
   }
-  // Local disk fallback (dev mode)
+  // Local disk fallback (dev mode) — validate magic bytes before serving it publicly
+  assertLocalImage(file.path);
   return `/uploads/${file.filename}`;
 };
 
@@ -88,83 +112,95 @@ const deleteLocalImage = (imageUrl) => {
   if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
 };
 
+// Shared: validate price / sale_price / stock values coming from an admin form.
+// fallbackPrice is the existing product price (used when price isn't part of the update).
+// Returns { error } or { price, sale_price, stock }.
+const validatePricing = ({ price, sale_price, stock }, fallbackPrice = null) => {
+  let priceNum = price === undefined || price === '' ? null : Number(price);
+  if (priceNum !== null && (!Number.isFinite(priceNum) || priceNum <= 0)) {
+    return { error: 'Price must be a positive number' };
+  }
+  const effectivePrice = priceNum !== null ? priceNum : fallbackPrice;
+  let saleNum = null;
+  if (sale_price !== undefined && sale_price !== '' && sale_price !== null) {
+    saleNum = Number(sale_price);
+    if (!Number.isFinite(saleNum) || saleNum < 0 || (effectivePrice !== null && saleNum >= effectivePrice)) {
+      return { error: 'Sale price must be a non-negative number lower than the price' };
+    }
+  }
+  let stockNum = stock === undefined || stock === '' ? null : Number(stock);
+  if (stockNum !== null && (!Number.isInteger(stockNum) || stockNum < 0)) {
+    return { error: 'Stock must be a non-negative whole number' };
+  }
+  return { price: priceNum, sale_price: saleNum, stock: stockNum };
+};
+
 // ---------- PUBLIC ROUTES ----------
 
 // GET /api/products - List products with optional filters, search, sort, pagination
 router.get('/', (req, res) => {
-  const { category, fabric, color, search, sort, min_price, max_price, in_stock, page = 1, limit = 50 } = req.query;
+  const { category, fabric, color, search, sort, min_price, max_price, in_stock, featured, page = 1, limit = 50 } = req.query;
 
-  let sql = `SELECT p.*, 
-    (SELECT COUNT(*) FROM reviews r WHERE r.product_id = p.id) as review_count,
-    (SELECT AVG(rating) FROM reviews r WHERE r.product_id = p.id) as avg_rating
-    FROM products p WHERE 1=1`;
+  const where = ['1=1'];
   const params = [];
+  // Escape LIKE wildcards so user input can't match everything
+  const like = (v) => String(v).replace(/[\\%_]/g, (c) => `\\${c}`);
 
-  if (category) {
-    sql += ' AND p.category LIKE ?';
-    params.push(`%${category}%`);
-  }
-  if (fabric) {
-    sql += ' AND p.fabric LIKE ?';
-    params.push(`%${fabric}%`);
-  }
-  if (color) {
-    sql += ' AND p.color LIKE ?';
-    params.push(`%${color}%`);
-  }
+  if (category) { where.push("p.category LIKE ? ESCAPE '\\'"); params.push(`%${like(category)}%`); }
+  if (fabric) { where.push("p.fabric LIKE ? ESCAPE '\\'"); params.push(`%${like(fabric)}%`); }
+  if (color) { where.push("p.color LIKE ? ESCAPE '\\'"); params.push(`%${like(color)}%`); }
   if (search) {
-    sql += ' AND (p.name LIKE ? OR p.description LIKE ? OR p.category LIKE ?)';
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    where.push("(p.name LIKE ? ESCAPE '\\' OR p.description LIKE ? ESCAPE '\\' OR p.category LIKE ? ESCAPE '\\')");
+    params.push(`%${like(search)}%`, `%${like(search)}%`, `%${like(search)}%`);
   }
-  if (min_price) {
-    sql += ' AND p.price >= ?';
-    params.push(parseFloat(min_price));
-  }
-  if (max_price) {
-    sql += ' AND p.price <= ?';
-    params.push(parseFloat(max_price));
-  }
-  if (in_stock === 'true' || in_stock === '1') {
-    sql += ' AND p.stock > 0';
-  }
+  // Price filters use the effective (sale) price when present
+  const minP = parseFloat(min_price);
+  const maxP = parseFloat(max_price);
+  if (Number.isFinite(minP) && minP > 0) { where.push('COALESCE(p.sale_price, p.price) >= ?'); params.push(minP); }
+  if (Number.isFinite(maxP) && maxP > 0) { where.push('COALESCE(p.sale_price, p.price) <= ?'); params.push(maxP); }
+  if (in_stock === 'true' || in_stock === '1') where.push('p.stock > 0');
+  // 'featured' is a filter (sort=featured kept for backwards-compat with the homepage)
+  if (featured === 'true' || featured === '1' || sort === 'featured') where.push('p.is_featured = 1');
 
-  if (sort === 'price_asc') sql += ' ORDER BY p.price ASC';
-  else if (sort === 'price_desc') sql += ' ORDER BY p.price DESC';
-  else if (sort === 'newest') sql += ' ORDER BY p.created_at DESC';
-  else if (sort === 'rating') sql += ' ORDER BY avg_rating DESC';
-  else if (sort === 'featured') sql += ' AND p.is_featured = 1 ORDER BY p.created_at DESC';
-  else sql += ' ORDER BY p.created_at DESC';
+  let orderBy = 'p.created_at DESC';
+  if (sort === 'price_asc') orderBy = 'COALESCE(p.sale_price, p.price) ASC';
+  else if (sort === 'price_desc') orderBy = 'COALESCE(p.sale_price, p.price) DESC';
+  else if (sort === 'rating') orderBy = 'avg_rating DESC';
 
-  sql += ' LIMIT ? OFFSET ?';
-  const limitNum = Math.min(Number(limit) || 50, 100);
-  const pageNum = Math.max(Number(page) || 1, 1);
-  params.push(limitNum, (pageNum - 1) * limitNum);
+  const limitNum = Math.min(Math.max(1, Number(limit) || 50), 100);
+  const pageNum = Math.max(1, Number(page) || 1);
+  const offset = (pageNum - 1) * limitNum;
 
-  db.all(sql, params, (err, rows) => {
-    if (err) {
-      return res.status(500).json({ message: 'Server error', error: err.message });
-    }
+  const whereSql = where.join(' AND ');
+  const selectSql = `SELECT p.*,
+      (SELECT COUNT(*) FROM reviews r WHERE r.product_id = p.id) as review_count,
+      (SELECT AVG(rating) FROM reviews r WHERE r.product_id = p.id) as avg_rating
+    FROM products p WHERE ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`;
 
-    // Format avg_rating
+  db.all(selectSql, [...params, limitNum, offset], (err, rows) => {
+    if (err) return res.status(500).json({ message: 'Server error' });
     const products = rows.map((p) => ({
       ...p,
       avg_rating: p.avg_rating ? Number(p.avg_rating).toFixed(1) : null,
       review_count: p.review_count || 0
     }));
 
-    res.json({ products, page: pageNum, limit: limitNum });
+    db.get(`SELECT COUNT(*) as total FROM products p WHERE ${whereSql}`, params, (cErr, countRow) => {
+      if (cErr) return res.status(500).json({ message: 'Server error' });
+      res.json({ products, total: countRow?.total || 0, page: pageNum, limit: limitNum });
+    });
   });
 });
 
 // GET /api/products/featured - Get featured products
 router.get('/featured', (req, res) => {
   db.all(
-    `SELECT p.*, 
+    `SELECT p.*,
       (SELECT COUNT(*) FROM reviews r WHERE r.product_id = p.id) as review_count,
       (SELECT AVG(rating) FROM reviews r WHERE r.product_id = p.id) as avg_rating
      FROM products p WHERE p.is_featured = 1 AND p.stock > 0 ORDER BY p.created_at DESC LIMIT 8`,
     (err, rows) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+      if (err) return res.status(500).json({ message: 'Server error' });
       const products = rows.map((p) => ({ ...p, avg_rating: p.avg_rating ? Number(p.avg_rating).toFixed(1) : null, review_count: p.review_count || 0 }));
       res.json({ products });
     }
@@ -175,17 +211,17 @@ router.get('/featured', (req, res) => {
 router.get('/related/:id', (req, res) => {
   const id = Number(req.params.id);
   db.get('SELECT * FROM products WHERE id = ?', [id], (err, product) => {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+    if (err) return res.status(500).json({ message: 'Server error' });
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
     db.all(
-      `SELECT p.*, 
+      `SELECT p.*,
         (SELECT COUNT(*) FROM reviews r WHERE r.product_id = p.id) as review_count,
         (SELECT AVG(rating) FROM reviews r WHERE r.product_id = p.id) as avg_rating
        FROM products p WHERE p.category = ? AND p.id != ? AND p.stock > 0 LIMIT 4`,
       [product.category, id],
       (relatedErr, rows) => {
-        if (relatedErr) return res.status(500).json({ message: 'Server error', error: relatedErr.message });
+        if (relatedErr) return res.status(500).json({ message: 'Server error' });
         const products = rows.map((p) => ({ ...p, avg_rating: p.avg_rating ? Number(p.avg_rating).toFixed(1) : null, review_count: p.review_count || 0 }));
         res.json({ products });
       }
@@ -201,18 +237,14 @@ router.get('/:id', (req, res) => {
   }
 
   db.get(
-    `SELECT p.*, 
+    `SELECT p.*,
       (SELECT COUNT(*) FROM reviews r WHERE r.product_id = p.id) as review_count,
       (SELECT AVG(rating) FROM reviews r WHERE r.product_id = p.id) as avg_rating
      FROM products p WHERE p.id = ?`,
     [id],
     (err, row) => {
-      if (err) {
-        return res.status(500).json({ message: 'Server error', error: err.message });
-      }
-      if (!row) {
-        return res.status(404).json({ message: 'Product not found' });
-      }
+      if (err) return res.status(500).json({ message: 'Server error' });
+      if (!row) return res.status(404).json({ message: 'Product not found' });
       res.json({ product: { ...row, avg_rating: row.avg_rating ? Number(row.avg_rating).toFixed(1) : null, review_count: row.review_count || 0 } });
     }
   );
@@ -224,8 +256,19 @@ router.get('/:id', (req, res) => {
 router.post('/', auth, admin, upload.single('image'), async (req, res) => {
   const { name, description, price, sale_price, fabric, color, size, category, stock, is_featured } = req.body;
 
-  if (!name || !price || !req.file) {
+  if (!name || !String(name).trim()) {
+    cleanupUploaded(req);
+    return res.status(400).json({ message: 'Product name is required' });
+  }
+  if (!price || !req.file) {
+    cleanupUploaded(req);
     return res.status(400).json({ message: 'Name, price, and image are required' });
+  }
+
+  const pricing = validatePricing({ price, sale_price, stock });
+  if (pricing.error) {
+    cleanupUploaded(req);
+    return res.status(400).json({ message: pricing.error });
   }
 
   try {
@@ -235,35 +278,33 @@ router.post('/', auth, admin, upload.single('image'), async (req, res) => {
       `INSERT INTO products (name, description, price, sale_price, fabric, color, size, category, image_url, stock, is_featured)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        name,
+        String(name).trim(),
         description || '',
-        parseFloat(price),
-        sale_price ? parseFloat(sale_price) : null,
+        pricing.price,
+        pricing.sale_price,
         fabric || '',
         color || '',
         size || 'U (6.3 m)',
         category || 'General',
         imageUrl,
-        parseInt(stock) || 10,
+        pricing.stock === null ? 10 : pricing.stock,
         is_featured ? 1 : 0
       ],
       function (err) {
         if (err) {
-          if (!useCloudinary && req.file) fs.unlinkSync(req.file.path);
-          return res.status(500).json({ message: 'Server error', error: err.message });
+          cleanupUploaded(req);
+          return res.status(500).json({ message: 'Server error' });
         }
         const newId = this.lastID;
         db.get('SELECT * FROM products WHERE id = ?', [newId], (getErr, newProduct) => {
-          res.status(201).json({
-            message: 'Product created successfully!',
-            product: newProduct
-          });
+          res.status(201).json({ message: 'Product created successfully!', product: newProduct });
         });
       }
     );
   } catch (err) {
     console.error('Image upload failed:', err.message);
-    res.status(500).json({ message: 'Image upload failed', error: err.message });
+    cleanupUploaded(req);
+    res.status(400).json({ message: err.message || 'Image upload failed' });
   }
 });
 
@@ -272,16 +313,18 @@ router.post('/:id/stock', auth, admin, (req, res) => {
   const id = Number(req.params.id);
   const { stock } = req.body;
   if (!id) return res.status(400).json({ message: 'Invalid product id' });
-  if (stock === undefined || parseInt(stock) < 0) {
-    return res.status(400).json({ message: 'Valid stock quantity is required' });
+
+  const stockNum = stock === undefined || stock === '' ? NaN : Number(stock);
+  if (!Number.isInteger(stockNum) || stockNum < 0) {
+    return res.status(400).json({ message: 'Stock must be a non-negative whole number' });
   }
 
   db.get('SELECT * FROM products WHERE id = ?', [id], (err, existing) => {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+    if (err) return res.status(500).json({ message: 'Server error' });
     if (!existing) return res.status(404).json({ message: 'Product not found' });
 
-    db.run('UPDATE products SET stock = ? WHERE id = ?', [parseInt(stock), id], (updateErr) => {
-      if (updateErr) return res.status(500).json({ message: 'Server error', error: updateErr.message });
+    db.run('UPDATE products SET stock = ? WHERE id = ?', [stockNum, id], (updateErr) => {
+      if (updateErr) return res.status(500).json({ message: 'Server error' });
       db.get('SELECT * FROM products WHERE id = ?', [id], (getErr, updated) => {
         res.json({ message: 'Stock updated!', product: updated });
       });
@@ -292,16 +335,25 @@ router.post('/:id/stock', auth, admin, (req, res) => {
 // PUT /api/products/:id - Update product (admin only)
 router.put('/:id', auth, admin, upload.single('image'), async (req, res) => {
   const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ message: 'Invalid product id' });
+  if (!id) {
+    cleanupUploaded(req);
+    return res.status(400).json({ message: 'Invalid product id' });
+  }
+
+  const { name, description, price, sale_price, fabric, color, size, category, stock, is_featured } = req.body;
 
   db.get('SELECT * FROM products WHERE id = ?', [id], async (err, existing) => {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+    if (err) return res.status(500).json({ message: 'Server error' });
     if (!existing) {
-      if (!useCloudinary && req.file) fs.unlinkSync(req.file.path);
+      cleanupUploaded(req);
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    const { name, description, price, sale_price, fabric, color, size, category, stock, is_featured } = req.body;
+    const pricing = validatePricing({ price, sale_price, stock }, existing.price);
+    if (pricing.error) {
+      cleanupUploaded(req);
+      return res.status(400).json({ message: pricing.error });
+    }
 
     try {
       // If a new image was uploaded, upload it (Cloudinary or local) and delete the old one
@@ -318,22 +370,22 @@ router.put('/:id', auth, admin, upload.single('image'), async (req, res) => {
            size = ?, category = ?, image_url = ?, stock = ?, is_featured = ?
          WHERE id = ?`,
         [
-          name || existing.name,
+          name !== undefined && name !== '' ? String(name).trim() : existing.name,
           description !== undefined ? description : existing.description,
-          price !== undefined ? parseFloat(price) : existing.price,
-          sale_price !== undefined && sale_price !== ''  ? parseFloat(sale_price) : null,
+          pricing.price !== null ? pricing.price : existing.price,
+          pricing.sale_price !== null ? pricing.sale_price : null,
           fabric || existing.fabric,
           color || existing.color,
           size || existing.size,
           category || existing.category,
           newImageUrl,
-          stock !== undefined ? parseInt(stock) : existing.stock,
+          pricing.stock !== null ? pricing.stock : existing.stock,
           is_featured !== undefined ? (is_featured ? 1 : 0) : existing.is_featured
         ],
         (updateErr) => {
           if (updateErr) {
-            if (!useCloudinary && req.file) fs.unlinkSync(req.file.path);
-            return res.status(500).json({ message: 'Server error', error: updateErr.message });
+            cleanupUploaded(req);
+            return res.status(500).json({ message: 'Server error' });
           }
           db.get('SELECT * FROM products WHERE id = ?', [id], (getErr, updated) => {
             res.json({ message: 'Product updated successfully!', product: updated });
@@ -342,7 +394,8 @@ router.put('/:id', auth, admin, upload.single('image'), async (req, res) => {
       );
     } catch (uploadErr) {
       console.error('Image upload failed:', uploadErr.message);
-      res.status(500).json({ message: 'Image upload failed', error: uploadErr.message });
+      cleanupUploaded(req);
+      res.status(400).json({ message: uploadErr.message || 'Image upload failed' });
     }
   });
 });
@@ -353,15 +406,19 @@ router.delete('/:id', auth, admin, (req, res) => {
   if (!id) return res.status(400).json({ message: 'Invalid product id' });
 
   db.get('SELECT * FROM products WHERE id = ?', [id], (err, existing) => {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+    if (err) return res.status(500).json({ message: 'Server error' });
     if (!existing) return res.status(404).json({ message: 'Product not found' });
 
     db.run('DELETE FROM products WHERE id = ?', [id], (deleteErr) => {
-      if (deleteErr) return res.status(500).json({ message: 'Server error', error: deleteErr.message });
+      if (deleteErr) return res.status(500).json({ message: 'Server error' });
 
-      // Remove related wishlist/reviews
-      db.run('DELETE FROM wishlist WHERE product_id = ?', [id]);
-      db.run('DELETE FROM reviews WHERE product_id = ?', [id]);
+      // Remove related wishlist/reviews (with callbacks so failures are logged, not fatal)
+      db.run('DELETE FROM wishlist WHERE product_id = ?', [id], (e1) => {
+        if (e1) console.error('Wishlist cleanup error:', e1.message);
+      });
+      db.run('DELETE FROM reviews WHERE product_id = ?', [id], (e2) => {
+        if (e2) console.error('Review cleanup error:', e2.message);
+      });
 
       // Remove image from cloud/local storage
       deleteImage(existing.image_url);

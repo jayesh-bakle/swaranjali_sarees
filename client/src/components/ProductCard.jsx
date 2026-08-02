@@ -32,8 +32,11 @@ export default function ProductCard({ product }) {
           {discount > 0 && (
             <span className="badge-sale">{discount}% OFF</span>
           )}
-          {product.is_featured === 1 && (
+          {Number(product.is_featured) === 1 && (
             <span className="bg-gold-500 text-white text-xs font-medium px-2.5 py-0.5 tracking-wide">FEATURED</span>
+          )}
+          {product.stock <= 0 && (
+            <span className="bg-slate-800 text-white text-xs font-medium px-2.5 py-0.5 tracking-wide">SOLD OUT</span>
           )}
         </div>
 
@@ -46,6 +49,13 @@ export default function ProductCard({ product }) {
             >
               Manage in Admin
             </Link>
+          ) : product.stock <= 0 ? (
+            <button
+              disabled
+              className="w-full py-3 bg-slate-300 text-slate-500 text-sm font-medium uppercase tracking-wider cursor-not-allowed"
+            >
+              Out of Stock
+            </button>
           ) : (
             <button
               onClick={(e) => {

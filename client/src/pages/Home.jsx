@@ -8,6 +8,7 @@ export default function Home() {
   const [featured, setFeatured] = useState([])
   const [latest, setLatest] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -18,8 +19,10 @@ export default function Home() {
         ])
         setFeatured(featuredRes.data.products)
         setLatest(latestRes.data.products)
+        setError(false)
       } catch (err) {
         console.error('Error fetching products:', err)
+        setError(true)
       } finally {
         setLoading(false)
       }
@@ -56,7 +59,7 @@ export default function Home() {
             <Link to="/shop" className="btn-gold text-lg px-10 py-3">
               Shop Collection
             </Link>
-            <Link to="/shop?category=Traditional%20Paithani" className="btn text-lg px-10 py-3 border border-gold-400 text-gold-300 hover:bg-gold-400 hover:text-primary-900 transition-colors">
+            <Link to="/shop?category=Paithani%20Collection" className="btn text-lg px-10 py-3 border border-gold-400 text-gold-300 hover:bg-gold-400 hover:text-primary-900 transition-colors">
               Explore Paithani
             </Link>
           </div>
@@ -74,6 +77,8 @@ export default function Home() {
         </div>
         {loading ? (
           <LoadingSpinner text="Loading featured sarees..." />
+        ) : error ? (
+          <p className="text-center text-slate-500 py-12">Couldn't load featured products. Please refresh to try again.</p>
         ) : featured.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
             {featured.map((product) => (
@@ -99,9 +104,9 @@ export default function Home() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             {[
-              { name: 'Traditional Paithani', icon: '🏵️', desc: 'Classic handwoven pure silk with gold zari', to: '/shop?category=Traditional%20Paithani' },
-              { name: 'Designer Paithani', icon: '✨', desc: 'Contemporary motifs in pure silk', to: '/shop?category=Designer%20Paithani' },
-              { name: 'Paithani Dupattas', icon: '🌸', desc: 'Elegant silk stoles & dupattas', to: '/shop?category=Paithani%20Dupattas' },
+              { name: 'Paithani Collection', icon: '🏵️', desc: 'Classic handwoven pure silk with gold zari', to: '/shop?category=Paithani%20Collection' },
+              { name: 'Banarasi Collection', icon: '✨', desc: 'Luxurious Banarasi silk with intricate zari', to: '/shop?category=Banarasi%20Collection' },
+              { name: 'Kanjivaram Collection', icon: '🌸', desc: 'Royal silk sarees for grand occasions', to: '/shop?category=Kanjivaram%20Collection' },
             ].map((cat, i) => (
               <Link
                 key={i}
@@ -128,6 +133,8 @@ export default function Home() {
         </div>
         {loading ? (
           <LoadingSpinner text="Loading new arrivals..." />
+        ) : error ? (
+          <p className="text-center text-slate-500 py-12">Couldn't load new arrivals. Please refresh to try again.</p>
         ) : latest.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
             {latest.map((product) => (

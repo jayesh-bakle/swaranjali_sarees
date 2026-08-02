@@ -8,11 +8,16 @@ import EmptyState from '../components/EmptyState'
 export default function Shop() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [products, setProducts] = useState([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
   const [categories, setCategories] = useState([])
   const [fabrics, setFabrics] = useState([])
   const [colors, setColors] = useState([])
   const [mobileFilters, setMobileFilters] = useState(false)
+
+  const PAGE_SIZE = 50
 
   const category = searchParams.get('category') || ''
   const fabric = searchParams.get('fabric') || ''
@@ -24,7 +29,7 @@ export default function Shop() {
     const fetchProducts = async () => {
       setLoading(true)
       try {
-        const params = { limit: 50 }
+        const params = { limit: PAGE_SIZE, page }
         if (category) params.category = category
         if (fabric) params.fabric = fabric
         if (colorParam) params.color = colorParam
@@ -32,25 +37,31 @@ export default function Shop() {
         if (sort) params.sort = sort
 
         const { data } = await API.get('/products', { params })
-        setProducts(data.products)
+        setProducts((prev) => (page === 1 ? data.products : [...prev, ...data.products]))
+        setTotal(data.total || 0)
+        setError(false)
 
-        // Derive filter options from products
-        const cats = [...new Set(data.products.map((p) => p.category).filter(Boolean))]
-        const fab = [...new Set(data.products.map((p) => p.fabric).filter(Boolean))]
-        const cols = [...new Set(data.products.map((p) => p.color).filter(Boolean))]
-        setCategories(cats)
-        setFabrics(fab)
-        setColors(cols)
+        // Derive filter options from the products on the first page
+        if (page === 1) {
+          const cats = [...new Set(data.products.map((p) => p.category).filter(Boolean))]
+          const fab = [...new Set(data.products.map((p) => p.fabric).filter(Boolean))]
+          const cols = [...new Set(data.products.map((p) => p.color).filter(Boolean))]
+          setCategories(cats)
+          setFabrics(fab)
+          setColors(cols)
+        }
       } catch (err) {
         console.error('Error fetching products:', err)
+        setError(true)
       } finally {
         setLoading(false)
       }
     }
     fetchProducts()
-  }, [category, fabric, colorParam, search, sort])
+  }, [category, fabric, colorParam, search, sort, page])
 
   const updateFilter = (key, value) => {
+    setPage(1) // reset pagination when filters change
     if (value) {
       searchParams.set(key, value)
     } else {
@@ -60,6 +71,7 @@ export default function Shop() {
   }
 
   const clearFilters = () => {
+    setPage(1)
     setSearchParams({})
     setMobileFilters(false)
   }
@@ -175,7 +187,7 @@ export default function Shop() {
                 Filters {filterCount > 0 && `(${filterCount})`}
               </button>
               <p className="text-sm text-slate-500">
-                <span className="font-semibold text-slate-700">{products.length}</span> products
+                <span className="font-semibold text-slate-700">{total}</span> products
                 {search && <span> for "<span className="text-primary-700">{search}</span>"</span>}
               </p>
             </div>
@@ -185,7 +197,6 @@ export default function Shop() {
               className="input w-auto text-sm max-w-full"
             >
               <option value="newest">Sort: Newest</option>
-              <option value="featured">Sort: Featured</option>
               <option value="price_asc">Sort: Price: Low to High</option>
               <option value="price_desc">Sort: Price: High to Low</option>
             </select>
@@ -207,12 +218,29 @@ export default function Shop() {
           {/* Product grid */}
           {loading ? (
             <LoadingSpinner text="Loading sarees..." />
+          ) : error ? (
+            <EmptyState
+              icon="⚠️"
+              title="Couldn't load products"
+              description="There was a problem reaching the store. Please refresh to try again."
+              actionText="Retry"
+              actionHandler={() => setPage(1)}
+            />
           ) : products.length > 0 ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
-              {products.map((product) => (
-                <ProductCard key={product.id} product={product} />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+                {products.map((product) => (
+                  <ProductCard key={product.id} product={product} />
+                ))}
+              </div>
+              {products.length < total && (
+                <div className="text-center mt-10">
+                  <button onClick={() => setPage((p) => p + 1)} className="btn-outline px-8 py-3" disabled={loading}>
+                    {loading ? 'Loading...' : 'Load More Sarees'}
+                  </button>
+                </div>
+              )}
+            </>
           ) : (
             <EmptyState
               title="No sarees found"

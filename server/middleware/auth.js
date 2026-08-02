@@ -3,7 +3,11 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key-change-me-in-production';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  // Fail closed — with the old hardcoded fallback, anyone could forge an admin token.
+  throw new Error('JWT_SECRET is not set. Add a strong random JWT_SECRET to server/.env (see .env.example).');
+}
 
 // Middleware to verify JWT token
 exports.auth = (req, res, next) => {
