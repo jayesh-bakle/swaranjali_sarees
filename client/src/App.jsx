@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
+import WhatsAppPopup from './components/WhatsAppPopup'
 import Home from './pages/Home'
 import Shop from './pages/Shop'
 import ProductDetail from './pages/ProductDetail'
@@ -37,6 +38,7 @@ function App() {
         </Routes>
       </main>
       <Footer />
+      <WhatsAppPopup />
     </div>
   )
 }
