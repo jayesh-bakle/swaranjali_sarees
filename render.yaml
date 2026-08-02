@@ -25,6 +25,36 @@ services:
         sync: false    # set manually (Sheet ID from the URL)
       - key: GOOGLE_SERVICE_ACCOUNT_JSON
         sync: false    # set manually (entire JSON key as a single line)
+      # Persistent Turso database — without these the hosted app uses an
+      # EPHEMERAL local SQLite file that resets on every deploy.
+      - key: TURSO_DATABASE_URL
+        sync: false    # set manually (libsql://… from turso.tech, same as server/.env)
+      - key: TURSO_AUTH_TOKEN
+        sync: false    # set manually (long-lived token — treat as a secret)
+      # Cloudinary image hosting — without these uploads land in local /uploads
+      # and are wiped on redeploy.
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false    # set manually (same as server/.env)
+      - key: CLOUDINARY_API_KEY
+        sync: false    # set manually
+      - key: CLOUDINARY_API_SECRET
+        sync: false    # set manually
+      # Optional hardening: lock CORS to your frontend origin(s).
+      # NOTE: the server passes this value through as a single origin, so use one
+      # origin (e.g. https://swaranjali-client.onrender.com) unless you extend the code.
+      - key: CORS_ORIGINS
+        sync: false    # optional — e.g. https://swaranjali-client.onrender.com
+      # Optional SMTP for order confirmation emails.
+      - key: MAIL_HOST
+        sync: false    # optional
+      - key: MAIL_PORT
+        sync: false    # optional
+      - key: MAIL_USER
+        sync: false    # optional
+      - key: MAIL_PASS
+        sync: false    # optional
+      - key: MAIL_FROM
+        sync: false    # optional
 
   # ── Frontend (static SPA) ────────────────────────────────────
   - type: web
