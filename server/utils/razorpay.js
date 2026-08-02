@@ -14,7 +14,10 @@ const getRazorpay = () => {
   const keyId = process.env.RAZORPAY_KEY_ID;
   const keySecret = process.env.RAZORPAY_KEY_SECRET;
   if (!keyId || !keySecret) {
-    const err = new Error('Razorpay keys not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env');
+    const err = new Error(
+      'Razorpay keys not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in server/.env for local runs, ' +
+      'or in the service environment variables on your hosting platform (e.g. Render Dashboard → Environment).'
+    );
     err.status = 500;
     throw err;
   }
