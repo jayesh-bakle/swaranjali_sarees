@@ -6,32 +6,36 @@ const { getRazorpay, isConfigured, verifyPaymentSignature, verifyWebhookSignatur
 const router = express.Router();
 
 // Shared helper: mark an order + its payment as paid and log a tracking entry.
-const markPaid = (orderId, total, userId, paymentId, details) => {
-  db.run(
-    `UPDATE orders SET payment_status = 'paid', payment_method = 'razorpay',
-       status = CASE WHEN status = 'pending' THEN 'confirmed' ELSE status END,
-       updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?`,
-    [orderId],
-    (err) => {
-      if (err) console.error('Mark-paid order update error:', err.message);
-    }
-  );
-  db.run(
-    `UPDATE payments SET status = 'completed', transaction_id = ?, payment_details = ? WHERE order_id = ?`,
-    [paymentId, JSON.stringify(details), orderId],
-    (uErr) => {
-      if (uErr) console.error('Payment update error:', uErr.message);
-    }
-  );
-  db.run(
-    `INSERT INTO order_tracking (order_id, status, note) VALUES (?, 'confirmed', 'Payment received. Order confirmed.')`,
-    [orderId],
-    (tErr) => {
-      if (tErr) console.error('Tracking insert error:', tErr.message);
-    }
-  );
-};
+// Returns a Promise that resolves after the DB writes complete, so callers can
+// respond only once the order actually shows as paid (avoids a stale "pending").
+const markPaid = (orderId, total, userId, paymentId, details) =>
+  new Promise((resolve) => {
+    db.run(
+      `UPDATE orders SET payment_status = 'paid', payment_method = 'razorpay',
+         status = CASE WHEN status = 'pending' THEN 'confirmed' ELSE status END,
+         updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [orderId],
+      (err) => {
+        if (err) console.error('Mark-paid order update error:', err.message);
+        db.run(
+          `UPDATE payments SET status = 'completed', transaction_id = ?, payment_details = ? WHERE order_id = ?`,
+          [paymentId, JSON.stringify(details), orderId],
+          (uErr) => {
+            if (uErr) console.error('Payment update error:', uErr.message);
+            db.run(
+              `INSERT INTO order_tracking (order_id, status, note) VALUES (?, 'confirmed', 'Payment received. Order confirmed.')`,
+              [orderId],
+              (tErr) => {
+                if (tErr) console.error('Tracking insert error:', tErr.message);
+                resolve();
+              }
+            );
+          }
+        );
+      }
+    );
+  });
 
 // POST /api/payments/create-order - Create a Razorpay order (kept for compatibility).
 // NOTE: verification now requires a matching pending payment created via
@@ -97,21 +101,25 @@ router.post('/create-order-for-order/:orderId', auth, (req, res) => {
         notes: { userId: String(req.user.id), orderId: String(order.id) },
       })
         .then((rzpOrder) => {
-          // Persist a pending payment tied to this razorpay order id
+          // Persist a pending payment tied to this razorpay order id.
+          // Respond ONLY after the insert completes — otherwise a fast /verify
+          // (right after checkout) races ahead of the INSERT and finds no payment row.
           db.run('DELETE FROM payments WHERE order_id = ? AND status = ?', [orderId, 'pending'], () => {
             db.run(
               `INSERT INTO payments (order_id, user_id, amount, method, status, transaction_id, payment_details)
                VALUES (?, ?, ?, 'razorpay', 'pending', ?, ?)`,
               [orderId, req.user.id, order.total, rzpOrder.id,
                JSON.stringify({ razorpay_order_id: rzpOrder.id, expected_amount_paise: Math.round(order.total * 100) })],
-              () => {}
+              (insErr) => {
+                if (insErr) console.error('Pending payment insert error:', insErr.message);
+                res.json({
+                  order_id: rzpOrder.id,
+                  amount: rzpOrder.amount,
+                  currency: rzpOrder.currency,
+                  key_id: process.env.RAZORPAY_KEY_ID,
+                });
+              }
             );
-          });
-          res.json({
-            order_id: rzpOrder.id,
-            amount: rzpOrder.amount,
-            currency: rzpOrder.currency,
-            key_id: process.env.RAZORPAY_KEY_ID,
           });
         })
         .catch((createErr) => {
@@ -169,8 +177,7 @@ router.post('/verify', auth, (req, res) => {
           }
           markPaid(oid, order.total, req.user.id, razorpay_payment_id, {
             razorpay_order_id, razorpay_payment_id, razorpay_signature,
-          });
-          res.json({ success: true, verified: true });
+          }).then(() => res.json({ success: true, verified: true }));
         };
 
         if (isConfigured()) {
@@ -219,8 +226,7 @@ router.post('/webhook', (req, res) => {
       markPaid(orderId, order.total, order.user_id, payment.id, {
         razorpay_payment_id: payment.id,
         razorpay_order_id: payment.order_id,
-      });
-      res.json({ received: true });
+      }).then(() => res.json({ received: true }));
     });
   } else {
     res.json({ received: true });
