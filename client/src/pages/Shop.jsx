@@ -165,7 +165,7 @@ export default function Shop() {
         {/* Main content */}
         <div className="flex-1 min-w-0">
           {/* Toolbar */}
-          <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-200">
             <div className="flex items-center gap-3">
               {/* Mobile filters button */}
               <button
@@ -182,7 +182,7 @@ export default function Shop() {
             <select
               value={sort}
               onChange={(e) => updateFilter('sort', e.target.value)}
-              className="input w-auto text-sm"
+              className="input w-auto text-sm max-w-full"
             >
               <option value="newest">Sort: Newest</option>
               <option value="featured">Sort: Featured</option>

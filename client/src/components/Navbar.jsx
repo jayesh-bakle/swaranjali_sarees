@@ -44,11 +44,11 @@ export default function Navbar() {
   return (
     <header className="bg-white sticky top-0 z-50 shadow-soft">
       {/* Top announcement ribbon */}
-      <div className="bg-primary-800 text-white text-center text-xs tracking-widest uppercase py-2">
+      <div className="bg-primary-800 text-white text-center text-[11px] sm:text-xs tracking-widest uppercase py-2">
         <div className="container-app flex items-center justify-center gap-2">
-          <span>✦</span>
-          <span>Authentic Handwoven Paithani · Free Shipping Across India</span>
-          <span>✦</span>
+          <span className="hidden xs:inline">✦</span>
+          <span className="truncate px-2">Authentic Handwoven Paithani · Free Shipping Across India</span>
+          <span className="hidden xs:inline">✦</span>
         </div>
       </div>
 

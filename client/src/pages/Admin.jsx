@@ -242,9 +242,9 @@ export default function Admin() {
 
   return (
     <div className="container-app py-10">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="font-display text-3xl font-semibold text-slate-900">Seller Dashboard</h1>
+          <h1 className="font-display text-2xl sm:text-3xl font-semibold text-slate-900">Seller Dashboard</h1>
           <p className="text-sm text-slate-500 mt-1">Manage products, inventory, orders & customers</p>
         </div>
         {activeTab === 'products' && (

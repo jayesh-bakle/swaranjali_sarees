@@ -5,6 +5,9 @@ export default {
   ],
   theme: {
     extend: {
+      screens: {
+        xs: '480px',
+      },
       fontFamily: {
         'sans': ['Inter', 'sans-serif'],
         'display': ['Cormorant Garamond', 'Playfair Display', 'serif'],

@@ -37,8 +37,8 @@ export default function ProductCard({ product }) {
           )}
         </div>
 
-        {/* Quick add on hover */}
-        <div className="absolute inset-x-0 bottom-0 translate-y-full group-hover:translate-y-0 transition-transform duration-300">
+        {/* Quick add — hover reveal on desktop, always visible on touch/mobile */}
+        <div className="absolute inset-x-0 bottom-0 translate-y-full group-hover:translate-y-0 transition-transform duration-300 max-md:translate-y-0">
           {isAdmin ? (
             <Link
               to="/admin"
