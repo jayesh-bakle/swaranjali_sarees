@@ -28,12 +28,31 @@ export function AuthProvider({ children }) {
     try {
       const { data } = await API.post('/auth/login', { email, password })
       localStorage.setItem('token', data.token)
-      localStorage.setItem('user', JSON.stringify(data.user))
-      setUser(data.user)
+      localStorage.setItem('user', JSON.stringify({ ...data.user, default_password: data.default_password || false }))
+      setUser({ ...data.user, default_password: data.default_password || false })
       setToken(data.token)
       return { success: true, message: data.message, user: data.user }
     } catch (err) {
       const message = err.response?.data?.message || 'Login failed. Please try again.'
+      setError(message)
+      return { success: false, message }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const changePassword = async (currentPassword, newPassword) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const { data } = await API.put('/auth/password', { currentPassword, newPassword })
+      localStorage.setItem('token', data.token)
+      localStorage.setItem('user', JSON.stringify({ ...data.user, default_password: false }))
+      setUser({ ...data.user, default_password: false })
+      setToken(data.token)
+      return { success: true, message: data.message }
+    } catch (err) {
+      const message = err.response?.data?.message || 'Failed to change password.'
       setError(message)
       return { success: false, message }
     } finally {
@@ -70,7 +89,7 @@ export function AuthProvider({ children }) {
   const isAdmin = user?.is_admin === 1 || user?.is_admin === true
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, error, login, register, logout, isAdmin }}>
+    <AuthContext.Provider value={{ user, token, loading, error, login, register, logout, changePassword, isAdmin }}>
       {children}
     </AuthContext.Provider>
   )

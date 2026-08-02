@@ -28,8 +28,8 @@ router.post('/register', async (req, res) => {
   if (!email || !password) {
     return res.status(400).json({ message: 'Please provide name, email, and password' });
   }
-  if (password.length < 6 || password.length > 72) {
-    return res.status(400).json({ message: 'Password must be 6-72 characters' });
+  if (password.length < 8 || password.length > 72) {
+    return res.status(400).json({ message: 'Password must be 8-72 characters' });
   }
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
@@ -87,7 +87,9 @@ router.post('/login', async (req, res) => {
       if (!isMatch) return res.status(401).json({ message: 'Invalid email or password' });
 
       const token = generateToken(user);
-      res.json({ message: 'Login successful!', token, user: sanitizeUser(user) });
+      // Flag the well-known seeded admin credential so the client can force a change
+      const defaultPassword = user.email === 'admin@sarees.com' && password === 'admin123';
+      res.json({ message: 'Login successful!', token, default_password: defaultPassword, user: sanitizeUser(user) });
     } catch (_) {
       return res.status(500).json({ message: 'Server error' });
     }
@@ -111,6 +113,42 @@ router.get('/users', auth, (req, res) => {
   db.all('SELECT id, name, email, is_admin, created_at FROM users ORDER BY created_at DESC', (err, rows) => {
     if (err) return res.status(500).json({ message: 'Server error' });
     res.json({ users: rows.map(sanitizeUser) });
+  });
+});
+
+// PUT /api/auth/password - Change password (verifies the current password first).
+// Rotating the password is the key mitigation for the seeded admin credential.
+router.put('/password', auth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'Provide your current password and a new password' });
+  }
+  if (newPassword.length < 8 || newPassword.length > 72) {
+    return res.status(400).json({ message: 'New password must be 8-72 characters' });
+  }
+  if (currentPassword === newPassword) {
+    return res.status(400).json({ message: 'New password must be different from the current one' });
+  }
+
+  db.get('SELECT * FROM users WHERE id = ?', [req.user.id], async (err, user) => {
+    if (err) return res.status(500).json({ message: 'Server error' });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    try {
+      const isMatch = await bcrypt.compare(currentPassword, user.password_hash);
+      if (!isMatch) return res.status(400).json({ message: 'Current password is incorrect' });
+
+      const passwordHash = await bcrypt.hash(newPassword, 10);
+      db.run('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, req.user.id], (upErr) => {
+        if (upErr) return res.status(500).json({ message: 'Server error' });
+        // Issue a fresh token so the change is immediately reflected
+        const token = generateToken(user);
+        res.json({ message: 'Password updated successfully!', token, user: sanitizeUser(user) });
+      });
+    } catch (_) {
+      return res.status(500).json({ message: 'Server error' });
+    }
   });
 });
 

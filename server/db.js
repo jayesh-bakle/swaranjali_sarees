@@ -155,7 +155,21 @@ const SCHEMA = [
     description TEXT,
     image_url TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`
+  )`,
+  // ── Indexes — turn the full-table scans behind every filter/subquery into
+  //    index lookups. Idempotent (IF NOT EXISTS), so they're safe on existing DBs.
+  `CREATE INDEX IF NOT EXISTS idx_products_category ON products (category)`,
+  `CREATE INDEX IF NOT EXISTS idx_products_fabric ON products (fabric)`,
+  `CREATE INDEX IF NOT EXISTS idx_products_color ON products (color)`,
+  `CREATE INDEX IF NOT EXISTS idx_products_featured ON products (is_featured)`,
+  `CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews (product_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_orders_user ON orders (user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status)`,
+  `CREATE INDEX IF NOT EXISTS idx_wishlist_user ON wishlist (user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_wishlist_product ON wishlist (product_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_addresses_user ON addresses (user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_payments_order ON payments (order_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_tracking_order ON order_tracking (order_id)`
 ];
 
 let db = null;

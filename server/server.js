@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const compression = require('compression');
 const path = require('path');
 const dotenv = require('dotenv');
 
@@ -43,6 +44,21 @@ app.use(cors(
     : { origin: true } // dev default — set CORS_ORIGINS in production to lock this down
 ));
 
+// Gzip all responses (JSON shrinks ~70%, biggest easy latency win for mobile)
+app.use(compression());
+
+// Caching policy:
+//  - Sensitive/auth routes must never be cached by the browser or proxies.
+//  - Public catalog GETs may be cached briefly — but only for anonymous shoppers;
+//    authenticated requests (including the admin panel) always stay fresh.
+const noStore = (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); };
+const cachePublicGet = (seconds) => (req, res, next) => {
+  if (req.method === 'GET' && !req.headers.authorization) {
+    res.set('Cache-Control', `public, max-age=${seconds}`);
+  }
+  next();
+};
+
 // Rate limiting — protect auth endpoints (brute-force) and the API in general
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -70,6 +86,11 @@ app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 app.use('/api', apiLimiter);
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
+
+// Cache-Control: no-store for anything carrying private user/billing data
+app.use(['/api/auth', '/api/orders', '/api/payments', '/api/wishlist', '/api/addresses', '/api/admin'], noStore);
+// Cache-Control: short public cache for the shoppable catalog (anonymous only)
+app.use(['/api/products', '/api/categories'], cachePublicGet(60));
 
 // Serve uploaded images statically (no dotfiles, no directory index)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), { dotfiles: 'deny', index: false }));
