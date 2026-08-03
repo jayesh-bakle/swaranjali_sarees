@@ -44,10 +44,10 @@ services:
         sync: false    # set manually
       # REQUIRED in production: lock CORS to your frontend origin(s).
       # NOTE: the server passes this value through as a single origin, so use one
-      # origin (e.g. https://swaranjali-client.onrender.com) unless you extend the code.
+      # origin (e.g. https://jagmohini-paithani.onrender.com) unless you extend the code.
       # If unset, the API fails closed in production and denies cross-origin requests.
       - key: CORS_ORIGINS
-        sync: false    # e.g. https://swaranjali-client.onrender.com
+        sync: false    # e.g. https://jagmohini-paithani.onrender.com
       # Optional SMTP for order confirmation emails.
       - key: MAIL_HOST
         sync: false    # optional
@@ -62,7 +62,7 @@ services:
 
   # ── Frontend (static SPA) ────────────────────────────────────
   - type: web
-    name: swaranjali-client
+    name: jagmohini-paithani
     runtime: static
     rootDir: client
     buildCommand: npm install && npm run build
