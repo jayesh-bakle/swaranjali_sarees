@@ -1,7 +1,7 @@
 {
   "name": "saree-shopping-server",
   "version": "1.0.0",
-  "description": "Backend API for SareeElegance shopping app",
+  "description": "Backend API for Jagmohini Paithani shopping app",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

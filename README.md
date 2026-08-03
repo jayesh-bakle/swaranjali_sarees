@@ -1,4 +1,4 @@
-# 🛍️ SareeElegance — Full Stack E-Commerce App
+# 🛍️ Jagmohini Paithani — Full Stack E-Commerce App
 
 A complete Amazon/Flipkart-style shopping application for selling sarees online, with customer shopping, online payments, and a full admin dashboard for stock & inventory management.
 

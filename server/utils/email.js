@@ -31,9 +31,9 @@ const sendOrderConfirmation = async ({ order, items = [], customer = {} }) => {
 
   try {
     await transport.sendMail({
-      from: process.env.MAIL_FROM || `"SareeElegance" <${process.env.MAIL_USER}>`,
+      from: process.env.MAIL_FROM || `"Jagmohini Paithani" <${process.env.MAIL_USER}>`,
       to: customer.email,
-      subject: `Order #${order.id} confirmed — SareeElegance`,
+      subject: `Order #${order.id} confirmed — Jagmohini Paithani`,
       text: [
         `Hi ${customer.name || 'there'},`,
         '',
@@ -46,7 +46,7 @@ const sendOrderConfirmation = async ({ order, items = [], customer = {} }) => {
         '',
         'We will keep you updated as your order ships.',
         '',
-        '— SareeElegance',
+        '— Jagmohini Paithani',
       ].join('\n'),
     });
     console.log(`📧 Order confirmation email sent for order #${order.id}`);

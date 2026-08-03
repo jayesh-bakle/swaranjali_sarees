@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-const WHATSAPP_NUMBER = '918087194514'; // +91 8087194514
+const WHATSAPP_NUMBER = '917264948777'; // +91 7264948777
 
 export default function WhatsAppPopup() {
   const [show, setShow] = useState(false);
@@ -24,10 +24,10 @@ export default function WhatsAppPopup() {
           {/* Header */}
           <div className="bg-[#075e54] text-white px-4 py-3 flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-lg font-bold">
-              S
+              J
             </div>
             <div className="flex-1">
-              <p className="font-semibold text-sm">Swaranjali Sarees</p>
+              <p className="font-semibold text-sm">Jagmohini Paithani</p>
               <p className="text-xs text-green-200">Usually replies instantly</p>
             </div>
             <button
@@ -43,7 +43,7 @@ export default function WhatsAppPopup() {
           <div className="bg-[#ece5dd] bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCI+PHBhdGggZmlsbD0icmdiYSgwLDAsMCwwLjAzKSIgZD0iTTAgMGg2MHY2MEgweiIvPjwvc3ZnPg==')] px-4 py-5">
             <div className="bg-white rounded-lg px-3 py-2 shadow-sm max-w-[85%]">
               <p className="text-sm text-gray-800 leading-relaxed">
-                Namaste! 🙏 Welcome to Swaranjali Sarees.
+                Namaste! 🙏 Welcome to Jagmohini Paithani.
                 <br /><br />
                 How can we help you today? Feel free to ask about our collection, orders, or any queries!
               </p>

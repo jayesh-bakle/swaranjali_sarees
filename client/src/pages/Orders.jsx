@@ -104,7 +104,7 @@ export default function Orders() {
         key: data.key_id,
         amount: data.amount,
         currency: data.currency,
-        name: 'Swaranjali Sarees',
+        name: 'Jagmohini Paithani',
         description: `Payment for Order #${order.id}`,
         order_id: data.order_id,
         notes: { orderId: String(order.id) },

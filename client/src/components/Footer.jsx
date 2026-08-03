@@ -9,7 +9,7 @@ export default function Footer() {
           <div className="md:col-span-2">
             <div className="mb-4">
               <span className="font-display text-2xl font-semibold text-white">
-                Swaranjali<span className="text-gold-400"> Sarees</span>
+                Jagmohini<span className="text-gold-400"> Paithani</span>
               </span>
               <div className="text-[10px] uppercase tracking-[0.35em] text-gold-500 mt-1">
                 Authentic Paithani Silk
@@ -44,7 +44,7 @@ export default function Footer() {
           <div>
             <h3 className="font-display text-lg text-white mb-4 tracking-wide">Contact</h3>
             <ul className="space-y-2 text-sm">
-              <li>📞 +91 98765 43210</li>
+              <li>📞 +91 72649 48777</li>
               <li>📧 support@swaranjalisarees.com</li>
               <li>📍 Yeola, Maharashtra, India</li>
             </ul>
@@ -52,7 +52,7 @@ export default function Footer() {
         </div>
 
         <div className="border-t border-primary-800 mt-10 pt-6 text-center text-xs text-slate-500">
-          © {new Date().getFullYear()} Swaranjali Sarees. All rights reserved. Crafted with ❤️ for saree lovers.
+          © {new Date().getFullYear()} Jagmohini Paithani. All rights reserved. Crafted with ❤️ for saree lovers.
         </div>
       </div>
     </footer>

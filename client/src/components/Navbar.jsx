@@ -65,10 +65,10 @@ export default function Navbar() {
         {/* Logo */}
         <Link to="/" className="flex flex-col items-center group">
           <span className="font-display text-2xl lg:text-3xl font-bold text-primary-700 tracking-wide group-hover:text-primary-600 transition-colors">
-            Swaranjali
+            Jagmohini
           </span>
           <span className="text-[10px] lg:text-xs uppercase tracking-[0.35em] text-gold-600 -mt-1">
-            Sarees · Est. 1985
+            Paithani · Est. 1985
           </span>
         </Link>
 
