@@ -73,6 +73,7 @@ const SCHEMA = [
     size TEXT,
     category TEXT,
     image_url TEXT NOT NULL,
+    images TEXT,
     stock INTEGER DEFAULT 10 CHECK (stock >= 0),
     is_featured INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -232,6 +233,16 @@ if (useTurso) {
     } catch (_) { /* ignore if unsupported */ }
     console.log('✅ Turso schema ready');
 
+    // Add images column to products if missing (existing DBs) — product galleries
+    try {
+      const pcols = await execute('PRAGMA table_info(products)');
+      if (pcols.rows && !pcols.rows.some((c) => c.name === 'images')) {
+        await execute('ALTER TABLE products ADD COLUMN images TEXT');
+      }
+    } catch (err) {
+      console.error('Products images migration failed:', err.message);
+    }
+
     // Seed admin (email/password are env-configurable; the password is force-changed on first login)
     const adminEmail = process.env.ADMIN_EMAIL || 'admin@sarees.com';
     const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
@@ -265,6 +276,16 @@ if (useTurso) {
         );
       }
       console.log('🌾 Seeded sample sarees');
+    }
+
+    // Backfill images for any single-image products (existing DBs and fresh seeds)
+    try {
+      const missing = await execute("SELECT id, image_url FROM products WHERE images IS NULL OR images = ''");
+      for (const row of missing.rows || []) {
+        await execute('UPDATE products SET images = ? WHERE id = ?', [JSON.stringify([row.image_url]), row.id]);
+      }
+    } catch (err) {
+      console.error('Products images backfill failed:', err.message);
     }
 
     console.log('🚀 Turso database ready (free tier: data persists forever)');
@@ -330,6 +351,18 @@ else {
       });
     });
 
+    // Add images column to products if missing (existing DBs) — product galleries
+    await new Promise((resolve, reject) => {
+      db.all('PRAGMA table_info(products)', (err, columns) => {
+        if (err) return reject(err);
+        if (columns && !columns.some((c) => c.name === 'images')) {
+          db.run('ALTER TABLE products ADD COLUMN images TEXT', (e) => (e ? reject(e) : resolve()));
+        } else {
+          resolve();
+        }
+      });
+    });
+
     // Seed admin (email/password are env-configurable; the password is force-changed on first login)
     await new Promise((resolve) => {
       const adminEmail = process.env.ADMIN_EMAIL || 'admin@sarees.com';
@@ -389,6 +422,17 @@ else {
         } else {
           resolve();
         }
+      });
+    });
+
+    // Backfill images for any single-image products (existing DBs and fresh seeds)
+    await new Promise((resolve, reject) => {
+      db.all("SELECT id, image_url FROM products WHERE images IS NULL OR images = ''", (err, rows) => {
+        if (err) return reject(err);
+        const updates = (rows || []).map((row) =>
+          new Promise((r) => db.run('UPDATE products SET images = ? WHERE id = ?', [JSON.stringify([row.image_url]), row.id], r))
+        );
+        Promise.all(updates).then(resolve).catch(reject);
       });
     });
 

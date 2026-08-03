@@ -41,8 +41,8 @@ export default function Admin() {
   const [showForm, setShowForm] = useState(false)
   const [editingProduct, setEditingProduct] = useState(null)
   const [form, setForm] = useState(emptyForm)
-  const [preview, setPreview] = useState(null)
-  const [imageFile, setImageFile] = useState(null)
+  const [previews, setPreviews] = useState([])
+  const [imageFiles, setImageFiles] = useState([])
   const [orderStatus, setOrderStatus] = useState({})
   const [paymentStatus, setPaymentStatus] = useState({})
   useEffect(() => {
@@ -102,17 +102,28 @@ export default function Admin() {
   }
 
   const handleImageChange = (e) => {
-    const file = e.target.files[0]
-    if (file) {
-      setImageFile(file)
-      setPreview(URL.createObjectURL(file))
-    }
+    const incoming = Array.from(e.target.files || [])
+    if (!incoming.length) return
+    const room = Math.max(0, 5 - imageFiles.length)
+    const files = incoming.slice(0, room)
+    if (files.length < incoming.length) toast.error('Maximum 5 images per product')
+    setImageFiles((prev) => [...prev, ...files])
+    setPreviews((prev) => [...prev, ...files.map((f) => URL.createObjectURL(f))])
+  }
+
+  const removeImage = (index) => {
+    setImageFiles((prev) => prev.filter((_, i) => i !== index))
+    setPreviews((prev) => {
+      const next = prev.filter((_, i) => i !== index)
+      URL.revokeObjectURL(prev[index])
+      return next
+    })
   }
 
   const resetForm = () => {
     setForm(emptyForm)
-    setPreview(null)
-    setImageFile(null)
+    setPreviews([])
+    setImageFiles([])
     setEditingProduct(null)
     setShowForm(false)
   }
@@ -135,15 +146,15 @@ export default function Admin() {
     setSubmitting(true)
     try {
       if (editingProduct) {
-        if (imageFile) formData.append('image', imageFile)
+        if (imageFiles.length) imageFiles.forEach((f) => formData.append('images', f))
         await API.put(`/products/${editingProduct.id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
         toast.success('Product updated successfully!')
       } else {
-        if (!imageFile) {
-          toast.error('Please select an image')
+        if (!imageFiles.length) {
+          toast.error('Please select at least one image')
           return
         }
-        formData.append('image', imageFile)
+        imageFiles.forEach((f) => formData.append('images', f))
         await API.post('/products', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
         toast.success('Product added successfully!')
       }
@@ -170,11 +181,21 @@ export default function Admin() {
       stock: product.stock,
       is_featured: Number(product.is_featured) === 1
     })
-    setPreview(null)
-    setImageFile(null)
+    setPreviews([])
+    setImageFiles([])
     setShowForm(true)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+
+  // Existing gallery of the product being edited (API returns a raw JSON string → array)
+  const existingImages = (() => {
+    if (!editingProduct) return []
+    try {
+      const arr = JSON.parse(editingProduct.images || '[]')
+      if (Array.isArray(arr) && arr.length) return arr
+    } catch (_) { /* fall through */ }
+    return editingProduct.image_url ? [editingProduct.image_url] : []
+  })()
 
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to delete this product?')) return
@@ -340,13 +361,35 @@ export default function Admin() {
                   </div>
                 ))}
                 <div className="md:col-span-2">
-                  <label className="label">{editingProduct ? 'Product Image (leave empty to keep current)' : 'Product Image *'}</label>
-                  <input type="file" accept="image/*" onChange={handleImageChange} className="input cursor-pointer" />
-                  {preview ? (
-                    <img src={preview} alt="Preview" className="mt-2 h-40 object-cover rounded-lg" />
-                  ) : editingProduct ? (
-                    <img src={resolveImageUrl(editingProduct.image_url)} alt={editingProduct.name} className="mt-2 h-40 object-cover rounded-lg" />
-                  ) : null}
+                  <label className="label">
+                    {editingProduct ? 'Product Images (select new ones to replace all, max 5)' : 'Product Images * (max 5)'}
+                  </label>
+                  <input type="file" accept="image/*" multiple onChange={handleImageChange} className="input cursor-pointer" />
+                  {previews.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {previews.map((src, i) => (
+                        <div key={i} className="relative">
+                          <img src={src} alt={`Preview ${i + 1}`} className="h-24 w-20 object-cover rounded-lg border border-slate-200" />
+                          <button
+                            type="button"
+                            onClick={() => removeImage(i)}
+                            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center shadow hover:bg-red-600"
+                            aria-label="Remove image"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {editingProduct && previews.length === 0 && existingImages.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2 items-center">
+                      {existingImages.map((src, i) => (
+                        <img key={i} src={resolveImageUrl(src)} alt={`${editingProduct.name} ${i + 1}`} className="h-24 w-20 object-cover rounded-lg border border-slate-200" />
+                      ))}
+                      <p className="text-xs text-slate-500 w-full">Current images — selecting new ones replaces these.</p>
+                    </div>
+                  )}
                 </div>
                 <div className="md:col-span-2 flex items-center gap-2">
                   <input type="checkbox" name="is_featured" checked={form.is_featured} onChange={handleInputChange} id="is_featured" className="w-4 h-4" />

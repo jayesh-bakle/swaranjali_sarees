@@ -16,6 +16,7 @@ export default function ProductDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [quantity, setQuantity] = useState(1)
+  const [activeImage, setActiveImage] = useState(0)
   const { addItem } = useCart()
   const { isAdmin } = useAuth()
 
@@ -25,6 +26,7 @@ export default function ProductDetail() {
       try {
         const { data } = await API.get(`/products/${id}`)
         setProduct(data.product)
+        setActiveImage(0)
         setError(false)
         window.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -71,6 +73,9 @@ export default function ProductDetail() {
     : 0
 
   const imageUrl = resolveImageUrl(product.image_url)
+  const images = Array.isArray(product.images) && product.images.length
+    ? product.images.map(resolveImageUrl)
+    : [imageUrl]
 
   const handleAddToCart = () => {
     addItem(product, quantity)
@@ -88,22 +93,47 @@ export default function ProductDetail() {
       </nav>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-        {/* Product image */}
-        <div className="relative">
-          <div className="sticky top-24">
-            <div className="rounded-2xl overflow-hidden shadow-card aspect-[3/4] bg-slate-100">
-              <img src={imageUrl} alt={product.name} className="w-full h-full object-cover" />
+        {/* Product image gallery */}
+        <div>
+          <div className="sticky top-24 flex flex-col-reverse sm:flex-row gap-3">
+            {/* Thumbnail strip — vertical beside the image on desktop, horizontal below on mobile */}
+            {images.length > 1 && (
+              <div className="flex sm:flex-col gap-2 sm:w-20 overflow-x-auto sm:overflow-visible pb-2 sm:pb-0 -mx-1 px-1">
+                {images.map((src, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setActiveImage(i)}
+                    className={`w-16 h-20 sm:w-20 sm:h-24 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${
+                      i === activeImage ? 'border-primary-500 ring-2 ring-primary-200' : 'border-transparent hover:border-slate-300'
+                    }`}
+                    aria-label={`View image ${i + 1}`}
+                  >
+                    <img src={src} alt={`${product.name} — view ${i + 1}`} className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* Main image */}
+            <div className="relative flex-1 min-w-0">
+              <div className="rounded-2xl overflow-hidden shadow-card aspect-[3/4] bg-slate-100">
+                <img key={activeImage} src={images[activeImage] || imageUrl} alt={product.name} className="w-full h-full object-cover animate-fade-in" />
+              </div>
+              {discount > 0 && (
+                <div className="absolute top-4 left-4">
+                  <span className="badge-sale text-sm">SALE -{discount}%</span>
+                </div>
+              )}
+              {Number(product.is_featured) === 1 && (
+                <div className="absolute bottom-4 left-4">
+                  <span className="badge-featured">✨ Featured</span>
+                </div>
+              )}
+              {images.length > 1 && (
+                <div className="absolute bottom-3 right-3 text-xs font-medium text-slate-700 bg-white/85 rounded-full px-2.5 py-0.5 shadow-sm">
+                  {activeImage + 1} / {images.length}
+                </div>
+              )}
             </div>
-            {discount > 0 && (
-              <div className="absolute top-4 left-4">
-                <span className="badge-sale text-sm">SALE -{discount}%</span>
-              </div>
-            )}
-            {Number(product.is_featured) === 1 && (
-              <div className="absolute bottom-4 left-4">
-                <span className="badge-featured">✨ Featured</span>
-              </div>
-            )}
           </div>
         </div>
 

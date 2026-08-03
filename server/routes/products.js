@@ -71,11 +71,15 @@ const assertLocalImage = (filePath) => {
   if (!ok) throw new Error('Uploaded file is not a valid image');
 };
 
-// Remove the locally-saved file for a failed upload (no-op in Cloudinary mode)
+// Remove the locally-saved files for a failed upload (no-op in Cloudinary mode)
 const cleanupUploaded = (req) => {
-  if (!useCloudinary && req.file && req.file.path) {
-    try { fs.unlinkSync(req.file.path); } catch (_) { /* already gone */ }
-  }
+  if (useCloudinary) return;
+  const files = req.files || (req.file ? [req.file] : []);
+  files.forEach((f) => {
+    if (f && f.path) {
+      try { fs.unlinkSync(f.path); } catch (_) { /* already gone */ }
+    }
+  });
 };
 
 // Upload an image buffer to Cloudinary. Returns the secure CDN URL.
@@ -110,6 +114,25 @@ const deleteLocalImage = (imageUrl) => {
   if (!imageUrl || imageUrl.includes('http')) return;
   const oldPath = path.join(uploadsDir, path.basename(imageUrl));
   if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+};
+
+// Parse the images JSON column into an array of URLs (legacy rows have it NULL/empty).
+const parseImages = (p) => {
+  if (!p) return [];
+  try {
+    const parsed = JSON.parse(p.images || '[]');
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+  } catch (_) {
+    return [];
+  }
+};
+
+// Return a product row with `images` as a real array. image_url stays the primary
+// (first) image, so all existing consumers (cards, cart, order items) keep working.
+const formatProduct = (p) => {
+  if (!p) return p;
+  const images = parseImages(p);
+  return { ...p, images: images.length ? images : (p.image_url ? [p.image_url] : []) };
 };
 
 // Shared: validate price / sale_price / stock values coming from an admin form.
@@ -179,7 +202,7 @@ router.get('/', (req, res) => {
 
   db.all(selectSql, [...params, limitNum, offset], (err, rows) => {
     if (err) return res.status(500).json({ message: 'Server error' });
-    const products = rows.map((p) => ({
+    const products = rows.map((p) => formatProduct({
       ...p,
       avg_rating: p.avg_rating ? Number(p.avg_rating).toFixed(1) : null,
       review_count: p.review_count || 0
@@ -201,7 +224,7 @@ router.get('/featured', (req, res) => {
      FROM products p WHERE p.is_featured = 1 AND p.stock > 0 ORDER BY p.created_at DESC LIMIT 8`,
     (err, rows) => {
       if (err) return res.status(500).json({ message: 'Server error' });
-      const products = rows.map((p) => ({ ...p, avg_rating: p.avg_rating ? Number(p.avg_rating).toFixed(1) : null, review_count: p.review_count || 0 }));
+      const products = rows.map((p) => formatProduct({ ...p, avg_rating: p.avg_rating ? Number(p.avg_rating).toFixed(1) : null, review_count: p.review_count || 0 }));
       res.json({ products });
     }
   );
@@ -222,7 +245,7 @@ router.get('/related/:id', (req, res) => {
       [product.category, id],
       (relatedErr, rows) => {
         if (relatedErr) return res.status(500).json({ message: 'Server error' });
-        const products = rows.map((p) => ({ ...p, avg_rating: p.avg_rating ? Number(p.avg_rating).toFixed(1) : null, review_count: p.review_count || 0 }));
+        const products = rows.map((p) => formatProduct({ ...p, avg_rating: p.avg_rating ? Number(p.avg_rating).toFixed(1) : null, review_count: p.review_count || 0 }));
         res.json({ products });
       }
     );
@@ -245,24 +268,24 @@ router.get('/:id', (req, res) => {
     (err, row) => {
       if (err) return res.status(500).json({ message: 'Server error' });
       if (!row) return res.status(404).json({ message: 'Product not found' });
-      res.json({ product: { ...row, avg_rating: row.avg_rating ? Number(row.avg_rating).toFixed(1) : null, review_count: row.review_count || 0 } });
+      res.json({ product: formatProduct({ ...row, avg_rating: row.avg_rating ? Number(row.avg_rating).toFixed(1) : null, review_count: row.review_count || 0 }) });
     }
   );
 });
 
 // ---------- ADMIN ROUTES ----------
 
-// POST /api/products - Create new product (admin only)
-router.post('/', auth, admin, upload.single('image'), async (req, res) => {
+// POST /api/products - Create new product (admin only). Accepts 1-5 images.
+router.post('/', auth, admin, upload.array('images', 5), async (req, res) => {
   const { name, description, price, sale_price, fabric, color, size, category, stock, is_featured } = req.body;
 
   if (!name || !String(name).trim()) {
     cleanupUploaded(req);
     return res.status(400).json({ message: 'Product name is required' });
   }
-  if (!price || !req.file) {
+  if (!price || !req.files || req.files.length === 0) {
     cleanupUploaded(req);
-    return res.status(400).json({ message: 'Name, price, and image are required' });
+    return res.status(400).json({ message: 'Name, price, and at least one image are required' });
   }
 
   const pricing = validatePricing({ price, sale_price, stock });
@@ -272,11 +295,13 @@ router.post('/', auth, admin, upload.single('image'), async (req, res) => {
   }
 
   try {
-    const imageUrl = await uploadImage(req.file);
+    const urls = await Promise.all(req.files.map(uploadImage));
+    const imageUrl = urls[0];
+    const images = JSON.stringify(urls);
 
     db.run(
-      `INSERT INTO products (name, description, price, sale_price, fabric, color, size, category, image_url, stock, is_featured)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO products (name, description, price, sale_price, fabric, color, size, category, image_url, images, stock, is_featured)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         String(name).trim(),
         description || '',
@@ -287,6 +312,7 @@ router.post('/', auth, admin, upload.single('image'), async (req, res) => {
         size || 'U (6.3 m)',
         category || 'General',
         imageUrl,
+        images,
         pricing.stock === null ? 10 : pricing.stock,
         is_featured ? 1 : 0
       ],
@@ -297,7 +323,7 @@ router.post('/', auth, admin, upload.single('image'), async (req, res) => {
         }
         const newId = this.lastID;
         db.get('SELECT * FROM products WHERE id = ?', [newId], (getErr, newProduct) => {
-          res.status(201).json({ message: 'Product created successfully!', product: newProduct });
+          res.status(201).json({ message: 'Product created successfully!', product: formatProduct(newProduct) });
         });
       }
     );
@@ -333,7 +359,7 @@ router.post('/:id/stock', auth, admin, (req, res) => {
 });
 
 // PUT /api/products/:id - Update product (admin only)
-router.put('/:id', auth, admin, upload.single('image'), async (req, res) => {
+router.put('/:id', auth, admin, upload.array('images', 5), async (req, res) => {
   const id = Number(req.params.id);
   if (!id) {
     cleanupUploaded(req);
@@ -356,18 +382,24 @@ router.put('/:id', auth, admin, upload.single('image'), async (req, res) => {
     }
 
     try {
-      // If a new image was uploaded, upload it (Cloudinary or local) and delete the old one
+      // If new images were uploaded, upload them all and replace the gallery.
+      // Otherwise keep the existing image_url + images untouched.
+      const oldImages = new Set(parseImages(existing));
+      if (existing.image_url) oldImages.add(existing.image_url);
       let newImageUrl = existing.image_url;
-      if (req.file) {
-        newImageUrl = await uploadImage(req.file);
-        deleteImage(existing.image_url);
-        if (!useCloudinary) deleteLocalImage(existing.image_url);
+      let newImages = existing.images;
+      if (req.files && req.files.length > 0) {
+        const urls = await Promise.all(req.files.map(uploadImage));
+        newImageUrl = urls[0];
+        newImages = JSON.stringify(urls);
+        oldImages.forEach(deleteImage);
+        oldImages.forEach(deleteLocalImage);
       }
 
       db.run(
         `UPDATE products SET
            name = ?, description = ?, price = ?, sale_price = ?, fabric = ?, color = ?,
-           size = ?, category = ?, image_url = ?, stock = ?, is_featured = ?
+           size = ?, category = ?, image_url = ?, images = ?, stock = ?, is_featured = ?
          WHERE id = ?`,
         [
           name !== undefined && name !== '' ? String(name).trim() : existing.name,
@@ -379,8 +411,10 @@ router.put('/:id', auth, admin, upload.single('image'), async (req, res) => {
           size || existing.size,
           category || existing.category,
           newImageUrl,
+          newImages,
           pricing.stock !== null ? pricing.stock : existing.stock,
-          is_featured !== undefined ? (is_featured ? 1 : 0) : existing.is_featured
+          is_featured !== undefined ? (is_featured ? 1 : 0) : existing.is_featured,
+          id
         ],
         (updateErr) => {
           if (updateErr) {
@@ -388,7 +422,7 @@ router.put('/:id', auth, admin, upload.single('image'), async (req, res) => {
             return res.status(500).json({ message: 'Server error' });
           }
           db.get('SELECT * FROM products WHERE id = ?', [id], (getErr, updated) => {
-            res.json({ message: 'Product updated successfully!', product: updated });
+            res.json({ message: 'Product updated successfully!', product: formatProduct(updated) });
           });
         }
       );
@@ -420,9 +454,11 @@ router.delete('/:id', auth, admin, (req, res) => {
         if (e2) console.error('Review cleanup error:', e2.message);
       });
 
-      // Remove image from cloud/local storage
-      deleteImage(existing.image_url);
-      deleteLocalImage(existing.image_url);
+      // Remove all gallery images from cloud/local storage
+      const gallery = new Set(parseImages(existing));
+      if (existing.image_url) gallery.add(existing.image_url);
+      gallery.forEach(deleteImage);
+      gallery.forEach(deleteLocalImage);
 
       res.json({ message: 'Product deleted successfully!' });
     });
