@@ -10,7 +10,7 @@ router.get('/', (req, res) => {
     `SELECT c.*, (SELECT COUNT(*) FROM products p WHERE p.category = c.name) as product_count
      FROM categories c ORDER BY c.name ASC`,
     (err, rows) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+      if (err) return res.status(500).json({ message: 'Server error' });
       res.json({ categories: rows });
     }
   );
@@ -25,7 +25,7 @@ router.post('/', auth, admin, (req, res) => {
     'INSERT OR IGNORE INTO categories (name, description, image_url) VALUES (?, ?, ?)',
     [name, description || '', image_url || ''],
     function (err) {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+      if (err) return res.status(500).json({ message: 'Server error' });
       if (this.changes === 0) return res.status(400).json({ message: 'Category already exists' });
       const id = this.lastID;
       db.get('SELECT * FROM categories WHERE id = ?', [id], (getErr, category) => {

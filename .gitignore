@@ -11,9 +11,15 @@ build/
 .env.local
 .env.production
 
-# Database
+# Database (never commit DB files — they hold customer PII)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 
 # Uploaded images (keep folder, ignore contents)
 server/uploads/*

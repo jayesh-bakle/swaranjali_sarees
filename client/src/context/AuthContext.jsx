@@ -80,6 +80,10 @@ export function AuthProvider({ children }) {
   }
 
   const logout = () => {
+    // Best-effort server-side revocation (the JWT would otherwise stay valid until it expires)
+    try {
+      API.post('/auth/logout').catch(() => {})
+    } catch (_) { /* localStorage cleanup must always run */ }
     localStorage.removeItem('token')
     localStorage.removeItem('user')
     setUser(null)

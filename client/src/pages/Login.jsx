@@ -17,7 +17,12 @@ export default function Login() {
     const result = await login(email, password)
     if (result.success) {
       toast.success(`Welcome back, ${result.user.name}! 👋`)
-      navigate(result.user.is_admin ? '/admin' : from, { replace: true })
+      // The seeded admin account must rotate its password before using the app
+      if (result.user.default_password) {
+        navigate('/change-password', { replace: true })
+      } else {
+        navigate(result.user.is_admin ? '/admin' : from, { replace: true })
+      }
     } else {
       toast.error(result.message)
     }
@@ -73,13 +78,6 @@ export default function Login() {
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
-
-          {/* Demo credentials hint */}
-          <div className="mt-6 bg-slate-50 rounded-xl p-4 text-xs text-slate-600">
-            <p className="font-semibold text-slate-700 mb-1">💡 Demo Credentials</p>
-            <p><span className="font-medium">Admin:</span> admin@sarees.com / admin123</p>
-            <p className="mt-1">Or <Link to="/register" className="text-primary-600 hover:underline">create a free account</Link></p>
-          </div>
 
           <p className="text-center text-sm text-slate-500 mt-6">
             Don't have an account?{' '}

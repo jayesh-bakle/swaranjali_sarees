@@ -37,41 +37,6 @@ const markPaid = (orderId, total, userId, paymentId, details) =>
     );
   });
 
-// POST /api/payments/create-order - Create a Razorpay order (kept for compatibility).
-// NOTE: verification now requires a matching pending payment created via
-// /create-order-for-order/:orderId, so an arbitrary amount here cannot be used
-// to "pay" for a real order.
-router.post('/create-order', auth, (req, res) => {
-  if (req.user.is_admin) {
-    return res.status(403).json({ message: 'Admins manage the store. Only customers can checkout.' });
-  }
-
-  const { amount, currency, receipt, notes } = req.body;
-  if (!amount || amount <= 0) {
-    return res.status(400).json({ message: 'Invalid amount' });
-  }
-
-  try {
-    const rzp = getRazorpay();
-    rzp.orders.create({
-      amount: Math.round(amount * 100), // Razorpay uses paise (₹1 = 100 paise)
-      currency: currency || 'INR',
-      receipt: receipt || 'rcpt_' + Date.now(),
-      notes: notes || { userId: String(req.user.id) },
-    })
-      .then((order) => {
-        res.json({ order_id: order.id, amount: order.amount, currency: order.currency, key_id: process.env.RAZORPAY_KEY_ID });
-      })
-      .catch((err) => {
-        console.error('Razorpay create order error:', err);
-        res.status(500).json({ message: 'Failed to create payment order' });
-      });
-  } catch (err) {
-    console.error('Razorpay init error:', err.message);
-    res.status(500).json({ message: err.message });
-  }
-});
-
 // POST /api/payments/create-order-for-order/:orderId - Create a Razorpay order for an existing unpaid order.
 // Persists a pending payment record so /verify and the webhook can cross-check amount + ownership.
 router.post('/create-order-for-order/:orderId', auth, (req, res) => {
@@ -128,7 +93,7 @@ router.post('/create-order-for-order/:orderId', auth, (req, res) => {
         });
     } catch (initErr) {
       console.error('Razorpay init error:', initErr.message);
-      res.status(500).json({ message: initErr.message });
+      res.status(500).json({ message: 'Payment service unavailable. Please try again or use Cash on Delivery.' });
     }
   });
 });

@@ -15,7 +15,7 @@ router.get('/product/:productId', (req, res) => {
      WHERE r.product_id = ? ORDER BY r.created_at DESC`,
     [productId],
     (err, rows) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+      if (err) return res.status(500).json({ message: 'Server error' });
       res.json({ reviews: rows });
     }
   );
@@ -28,7 +28,7 @@ router.get('/product/:productId/summary', (req, res) => {
     'SELECT COUNT(*) as count, AVG(rating) as avg_rating FROM reviews WHERE product_id = ?',
     [productId],
     (err, row) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+      if (err) return res.status(500).json({ message: 'Server error' });
       res.json({
         count: row?.count || 0,
         avg_rating: row?.avg_rating ? Number(row.avg_rating).toFixed(1) : null
@@ -130,13 +130,13 @@ const upsertReview = (productId, rating, title, comment, userId, res) => {
 router.delete('/:id', auth, (req, res) => {
   const id = Number(req.params.id);
   db.get('SELECT * FROM reviews WHERE id = ?', [id], (err, review) => {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+    if (err) return res.status(500).json({ message: 'Server error' });
     if (!review) return res.status(404).json({ message: 'Review not found' });
     if (review.user_id !== req.user.id && !req.user.is_admin) {
       return res.status(403).json({ message: 'You can only delete your own reviews' });
     }
     db.run('DELETE FROM reviews WHERE id = ?', [id], (deleteErr) => {
-      if (deleteErr) return res.status(500).json({ message: 'Server error', error: deleteErr.message });
+      if (deleteErr) return res.status(500).json({ message: 'Server error' });
       res.json({ message: 'Review deleted' });
     });
   });

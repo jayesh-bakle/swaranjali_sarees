@@ -7,7 +7,7 @@ const router = express.Router();
 // GET /api/addresses - Get my addresses
 router.get('/', auth, (req, res) => {
   db.all('SELECT * FROM addresses WHERE user_id = ? ORDER BY is_default DESC, created_at DESC', [req.user.id], (err, rows) => {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+    if (err) return res.status(500).json({ message: 'Server error' });
     res.json({ addresses: rows });
   });
 });
@@ -16,7 +16,7 @@ router.get('/', auth, (req, res) => {
 router.get('/:id', auth, (req, res) => {
   const id = Number(req.params.id);
   db.get('SELECT * FROM addresses WHERE id = ? AND user_id = ?', [id, req.user.id], (err, row) => {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+    if (err) return res.status(500).json({ message: 'Server error' });
     if (!row) return res.status(404).json({ message: 'Address not found' });
     res.json({ address: row });
   });
@@ -44,7 +44,7 @@ router.post('/', auth, (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [req.user.id, full_name, phone, address_line1, address_line2 || '', city, state, postal_code, country || 'India', makeDefault ? 1 : 0],
       function (err) {
-        if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+        if (err) return res.status(500).json({ message: 'Server error' });
         const id = this.lastID;
         db.get('SELECT * FROM addresses WHERE id = ?', [id], (getErr, address) => {
           res.status(201).json({ message: 'Address saved!', address });
@@ -55,13 +55,13 @@ router.post('/', auth, (req, res) => {
 
   if (is_default || req.body.makeDefault) {
     db.run('UPDATE addresses SET is_default = 0 WHERE user_id = ?', [req.user.id], (err) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+      if (err) return res.status(500).json({ message: 'Server error' });
       doInsert(true);
     });
   } else {
     // If this is the first address, make it default
     db.get('SELECT COUNT(*) as count FROM addresses WHERE user_id = ?', [req.user.id], (err, row) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+      if (err) return res.status(500).json({ message: 'Server error' });
       doInsert(row.count === 0);
     });
   }
@@ -81,7 +81,7 @@ router.put('/:id', auth, (req, res) => {
   }
 
   db.get('SELECT * FROM addresses WHERE id = ? AND user_id = ?', [id, req.user.id], (err, existing) => {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+    if (err) return res.status(500).json({ message: 'Server error' });
     if (!existing) return res.status(404).json({ message: 'Address not found' });
 
     const updateDone = () => {
@@ -101,7 +101,7 @@ router.put('/:id', auth, (req, res) => {
           id
         ],
         (updateErr) => {
-          if (updateErr) return res.status(500).json({ message: 'Server error', error: updateErr.message });
+          if (updateErr) return res.status(500).json({ message: 'Server error' });
           db.get('SELECT * FROM addresses WHERE id = ?', [id], (getErr, address) => {
             res.json({ message: 'Address updated!', address });
           });
@@ -111,7 +111,7 @@ router.put('/:id', auth, (req, res) => {
 
     if (is_default) {
       db.run('UPDATE addresses SET is_default = 0 WHERE user_id = ?', [req.user.id], (err) => {
-        if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+        if (err) return res.status(500).json({ message: 'Server error' });
         updateDone();
       });
     } else {
@@ -124,7 +124,7 @@ router.put('/:id', auth, (req, res) => {
 router.delete('/:id', auth, (req, res) => {
   const id = Number(req.params.id);
   db.run('DELETE FROM addresses WHERE id = ? AND user_id = ?', [id, req.user.id], function (err) {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+    if (err) return res.status(500).json({ message: 'Server error' });
     if (this.changes === 0) return res.status(404).json({ message: 'Address not found' });
     res.json({ message: 'Address deleted' });
   });
@@ -134,13 +134,13 @@ router.delete('/:id', auth, (req, res) => {
 router.put('/:id/default', auth, (req, res) => {
   const id = Number(req.params.id);
   db.get('SELECT * FROM addresses WHERE id = ? AND user_id = ?', [id, req.user.id], (err, existing) => {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+    if (err) return res.status(500).json({ message: 'Server error' });
     if (!existing) return res.status(404).json({ message: 'Address not found' });
 
     db.run('UPDATE addresses SET is_default = 0 WHERE user_id = ?', [req.user.id], (err) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+      if (err) return res.status(500).json({ message: 'Server error' });
       db.run('UPDATE addresses SET is_default = 1 WHERE id = ?', [id], (updateErr) => {
-        if (updateErr) return res.status(500).json({ message: 'Server error', error: updateErr.message });
+        if (updateErr) return res.status(500).json({ message: 'Server error' });
         res.json({ message: 'Default address updated!' });
       });
     });

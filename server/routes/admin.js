@@ -9,6 +9,10 @@ router.use(auth, (req, res, next) => {
   if (!req.user.is_admin) {
     return res.status(403).json({ message: 'Access denied. Admin only.' });
   }
+  // The seeded admin must rotate the default password before the dashboard is usable.
+  if (req.user.default_password) {
+    return res.status(403).json({ message: 'You must change the default admin password before using the admin panel.' });
+  }
   next();
 });
 
@@ -51,7 +55,7 @@ router.get('/revenue-trend', (req, res) => {
      GROUP BY strftime('%Y-%m', created_at)
      ORDER BY month ASC`,
     (err, rows) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+      if (err) return res.status(500).json({ message: 'Server error' });
       res.json({ trend: rows });
     }
   );
@@ -73,7 +77,7 @@ router.get('/top-products', (req, res) => {
      ORDER BY revenue DESC
      LIMIT 10`,
     (err, rows) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+      if (err) return res.status(500).json({ message: 'Server error' });
       res.json({ products: rows });
     }
   );
@@ -116,7 +120,7 @@ router.get('/inventory-report', (req, res) => {
      FROM products p
      ORDER BY p.stock ASC`,
     (err, rows) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+      if (err) return res.status(500).json({ message: 'Server error' });
       res.json({ products: rows });
     }
   );
@@ -156,7 +160,7 @@ router.get('/category-report', (req, res) => {
      GROUP BY category
      ORDER BY product_count DESC`,
     (err, rows) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+      if (err) return res.status(500).json({ message: 'Server error' });
       res.json({ categories: rows });
     }
   );

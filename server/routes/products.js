@@ -304,7 +304,7 @@ router.post('/', auth, admin, upload.single('image'), async (req, res) => {
   } catch (err) {
     console.error('Image upload failed:', err.message);
     cleanupUploaded(req);
-    res.status(400).json({ message: err.message || 'Image upload failed' });
+    res.status(400).json({ message: 'Image upload failed. Please try a valid image.' });
   }
 });
 

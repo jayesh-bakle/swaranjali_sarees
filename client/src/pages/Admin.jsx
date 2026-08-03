@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import API from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
@@ -26,7 +26,7 @@ const emptyForm = {
 }
 
 export default function Admin() {
-  const { user, isAdmin, changePassword } = useAuth()
+  const { user, isAdmin } = useAuth()
   const [activeTab, setActiveTab] = useState('overview')
   const [products, setProducts] = useState([])
   const [orders, setOrders] = useState([])
@@ -45,34 +45,6 @@ export default function Admin() {
   const [imageFile, setImageFile] = useState(null)
   const [orderStatus, setOrderStatus] = useState({})
   const [paymentStatus, setPaymentStatus] = useState({})
-  // Change-password state (for the default-credential warning)
-  const [showChangePw, setShowChangePw] = useState(false)
-  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' })
-  const [pwBusy, setPwBusy] = useState(false)
-
-  const handleChangePassword = async (e) => {
-    e.preventDefault()
-    if (pwBusy) return
-    if (pwForm.next.length < 8) {
-      toast.error('New password must be at least 8 characters')
-      return
-    }
-    if (pwForm.next !== pwForm.confirm) {
-      toast.error('New passwords do not match')
-      return
-    }
-    setPwBusy(true)
-    const result = await changePassword(pwForm.current, pwForm.next)
-    if (result.success) {
-      toast.success('Password updated successfully!')
-      setShowChangePw(false)
-      setPwForm({ current: '', next: '', confirm: '' })
-    } else {
-      toast.error(result.message)
-    }
-    setPwBusy(false)
-  }
-
   useEffect(() => {
     if (!isAdmin) {
       setLoading(false)
@@ -261,6 +233,10 @@ export default function Admin() {
       </div>
     )
   }
+  if (user?.default_password) {
+    // The server refuses to serve admin data until the seeded password is rotated
+    return <Navigate to="/change-password" replace />
+  }
 
   if (loading && !stats && !products.length) {
     return <LoadingSpinner text="Loading seller dashboard..." fullPage />
@@ -321,49 +297,6 @@ export default function Admin() {
           )}
         </div>
       </div>
-
-      {/* Default-credential warning — force the seeded admin to change the password */}
-      {user?.default_password && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-semibold text-red-800">⚠️ You're signed in with the default admin password</p>
-              <p className="text-sm text-red-700 mt-0.5">
-                Anyone can log in as admin with <code className="bg-red-100 px-1 rounded">admin@sarees.com / admin123</code>. Change it now to secure your store.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowChangePw(!showChangePw)}
-              className="btn-primary !bg-red-700 !border-red-700 hover:!bg-red-800"
-            >
-              {showChangePw ? 'Cancel' : 'Change Password'}
-            </button>
-          </div>
-          {showChangePw && (
-            <form onSubmit={handleChangePassword} className="mt-4 p-4 bg-white border border-red-100 rounded-lg grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-              <div>
-                <label className="label">Current Password</label>
-                <input type="password" className="input" value={pwForm.current} required
-                  onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })} />
-              </div>
-              <div>
-                <label className="label">New Password (min 8)</label>
-                <input type="password" className="input" value={pwForm.next} required
-                  onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })} />
-              </div>
-              <div>
-                <label className="label">Confirm New Password</label>
-                <input type="password" className="input" value={pwForm.confirm} required
-                  onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })} />
-              </div>
-              <button type="submit" disabled={pwBusy} className="btn-primary sm:col-span-3">
-                {pwBusy ? 'Updating…' : 'Update Password'}
-              </button>
-            </form>
-          )}
-        </div>
-      )}
 
       {/* Tabs */}
       <div className="flex flex-wrap gap-2 mb-8">

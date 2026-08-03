@@ -12,7 +12,7 @@ router.get('/', auth, (req, res) => {
      WHERE wl.user_id = ? ORDER BY wl.created_at DESC`,
     [req.user.id],
     (err, rows) => {
-      if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+      if (err) return res.status(500).json({ message: 'Server error' });
       res.json({ items: rows });
     }
   );
@@ -49,7 +49,7 @@ router.delete('/:productId', auth, (req, res) => {
   if (!productId) return res.status(400).json({ message: 'Invalid product id' });
 
   db.run('DELETE FROM wishlist WHERE user_id = ? AND product_id = ?', [req.user.id, productId], function (err) {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+    if (err) return res.status(500).json({ message: 'Server error' });
     res.json({ message: 'Removed from wishlist', inWishlist: false });
   });
 });
@@ -58,7 +58,7 @@ router.delete('/:productId', auth, (req, res) => {
 router.get('/check/:productId', auth, (req, res) => {
   const productId = Number(req.params.productId);
   db.get('SELECT id FROM wishlist WHERE user_id = ? AND product_id = ?', [req.user.id, productId], (err, row) => {
-    if (err) return res.status(500).json({ message: 'Server error', error: err.message });
+    if (err) return res.status(500).json({ message: 'Server error' });
     res.json({ inWishlist: !!row });
   });
 });

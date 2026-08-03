@@ -24,7 +24,7 @@ API.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       const url = error.config?.url || ''
-      const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register')
+      const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/logout')
       if (!isAuthEndpoint && !sessionToastShown) {
         sessionToastShown = true
         toast.error('Your session has expired. Please sign in again.')

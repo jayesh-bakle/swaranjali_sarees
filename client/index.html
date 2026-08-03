@@ -5,6 +5,11 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧵</text></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Shop authentic handwoven Paithani, Banarasi & Kanjivaram silk sarees from Yeola, Maharashtra. Free shipping across India." />
+    <!-- Security: Content-Security-Policy + Referrer-Policy. The API and Google Fonts are
+         allow-listed; Razorpay needs script/frame/connect access for the checkout modal.
+         If you deploy the API to a different host, add it to connect-src. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' http://localhost:5000 http://127.0.0.1:5000 https://checkout.razorpay.com https://api.razorpay.com https://swaranjali-server.onrender.com; frame-src https://checkout.razorpay.com https://api.razorpay.com; object-src 'none'; base-uri 'self'; form-action 'self'" />
+    <meta name="referrer" content="no-referrer" />
     <meta property="og:title" content="Swaranjali Sarees — Authentic Paithani Silk Sarees" />
     <meta property="og:description" content="Handwoven pure silk sarees with genuine gold zari. Crafted by master weavers of Yeola, Maharashtra." />
     <meta property="og:type" content="website" />

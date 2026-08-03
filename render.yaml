@@ -10,11 +10,14 @@ services:
     plan: free
     buildCommand: npm install
     startCommand: node server.js
+    healthCheckPath: /
     envVars:
       - key: NODE_VERSION
         value: 20
       - key: JWT_SECRET
         generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false    # optional — seed password for the admin account (force-changed on first login)
       - key: RAZORPAY_KEY_ID
         sync: false    # set manually (rzp_test_xxx from razorpay.com)
       - key: RAZORPAY_KEY_SECRET
@@ -39,11 +42,12 @@ services:
         sync: false    # set manually
       - key: CLOUDINARY_API_SECRET
         sync: false    # set manually
-      # Optional hardening: lock CORS to your frontend origin(s).
+      # REQUIRED in production: lock CORS to your frontend origin(s).
       # NOTE: the server passes this value through as a single origin, so use one
       # origin (e.g. https://swaranjali-client.onrender.com) unless you extend the code.
+      # If unset, the API fails closed in production and denies cross-origin requests.
       - key: CORS_ORIGINS
-        sync: false    # optional — e.g. https://swaranjali-client.onrender.com
+        sync: false    # e.g. https://swaranjali-client.onrender.com
       # Optional SMTP for order confirmation emails.
       - key: MAIL_HOST
         sync: false    # optional

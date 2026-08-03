@@ -86,9 +86,12 @@ router.post('/login', async (req, res) => {
       const isMatch = await bcrypt.compare(password, user.password_hash); // async
       if (!isMatch) return res.status(401).json({ message: 'Invalid email or password' });
 
-      const token = generateToken(user);
-      // Flag the well-known seeded admin credential so the client can force a change
-      const defaultPassword = user.email === 'admin@sarees.com' && password === 'admin123';
+      // Flag the seeded admin credential (env-configurable) so the client can force a change
+      const defaultAdminEmail = process.env.ADMIN_EMAIL || 'admin@sarees.com';
+      const defaultAdminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+      const defaultPassword = user.email === defaultAdminEmail && password === defaultAdminPassword;
+      // The JWT carries the flag so middleware can block the account until the password is rotated
+      const token = generateToken({ ...user, default_password: defaultPassword });
       res.json({ message: 'Login successful!', token, default_password: defaultPassword, user: sanitizeUser(user) });
     } catch (_) {
       return res.status(500).json({ message: 'Server error' });
@@ -142,14 +145,38 @@ router.put('/password', auth, async (req, res) => {
       const passwordHash = await bcrypt.hash(newPassword, 10);
       db.run('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, req.user.id], (upErr) => {
         if (upErr) return res.status(500).json({ message: 'Server error' });
-        // Issue a fresh token so the change is immediately reflected
-        const token = generateToken(user);
-        res.json({ message: 'Password updated successfully!', token, user: sanitizeUser(user) });
+        // Revoke the old token, then issue a fresh one without the default_password flag
+        const finish = () => {
+          const token = generateToken({ ...user, default_password: false });
+          res.json({ message: 'Password updated successfully!', token, user: sanitizeUser(user) });
+        };
+        if (!req.user.jti) return finish();
+        const expiresMs = req.user.exp ? req.user.exp * 1000 : Date.now() + 7 * 24 * 60 * 60 * 1000;
+        db.run(
+          'INSERT OR REPLACE INTO token_blacklist (jti, expires_at) VALUES (?, ?)',
+          [req.user.jti, expiresMs],
+          () => finish()
+        );
       });
     } catch (_) {
       return res.status(500).json({ message: 'Server error' });
     }
   });
+});
+
+// POST /api/auth/logout - Revoke the current token server-side (takes effect immediately,
+// even though the JWT itself is stateless and would otherwise stay valid until it expires).
+router.post('/logout', auth, (req, res) => {
+  if (!req.user.jti) return res.json({ message: 'Logged out successfully' });
+  const expiresMs = req.user.exp ? req.user.exp * 1000 : Date.now() + 7 * 24 * 60 * 60 * 1000;
+  db.run(
+    'INSERT OR REPLACE INTO token_blacklist (jti, expires_at) VALUES (?, ?)',
+    [req.user.jti, expiresMs],
+    (err) => {
+      if (err) return res.status(500).json({ message: 'Server error' });
+      res.json({ message: 'Logged out successfully' });
+    }
+  );
 });
 
 module.exports = router;

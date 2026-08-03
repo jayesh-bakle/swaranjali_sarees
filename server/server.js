@@ -33,16 +33,23 @@ if (process.env.NODE_ENV === 'production') {
 // Security headers (CSP, X-Frame-Options, HSTS, etc.)
 app.use(helmet());
 
-// CORS — restrict to configured origins in production; open by default in dev
+// CORS — restrict to configured origins when set; otherwise fail closed in
+// production (deny cross-origin) and stay open only for local development.
 const corsOrigins = (process.env.CORS_ORIGINS || '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
-app.use(cors(
-  corsOrigins.length
-    ? { origin: corsOrigins }
-    : { origin: true } // dev default — set CORS_ORIGINS in production to lock this down
-));
+let corsOptions;
+if (corsOrigins.length) {
+  corsOptions = { origin: corsOrigins };
+} else if (process.env.NODE_ENV === 'production') {
+  // Fail closed — an unconfigured CORS_ORIGINS must not open the API to every website.
+  corsOptions = { origin: false };
+  console.warn('⚠️ CORS_ORIGINS is not set. Cross-origin browser requests will be denied. Set CORS_ORIGINS to your frontend origin in production.');
+} else {
+  corsOptions = { origin: true }; // dev convenience — lock down with CORS_ORIGINS in any shared env
+}
+app.use(cors(corsOptions));
 
 // Gzip all responses (JSON shrinks ~70%, biggest easy latency win for mobile)
 app.use(compression());

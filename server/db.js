@@ -149,6 +149,10 @@ const SCHEMA = [
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (order_id) REFERENCES orders (id)
   )`,
+  `CREATE TABLE IF NOT EXISTS token_blacklist (
+    jti TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -169,7 +173,8 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_wishlist_product ON wishlist (product_id)`,
   `CREATE INDEX IF NOT EXISTS idx_addresses_user ON addresses (user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_payments_order ON payments (order_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_tracking_order ON order_tracking (order_id)`
+  `CREATE INDEX IF NOT EXISTS idx_tracking_order ON order_tracking (order_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_blacklist_expires ON token_blacklist (expires_at)`
 ];
 
 let db = null;
@@ -227,15 +232,17 @@ if (useTurso) {
     } catch (_) { /* ignore if unsupported */ }
     console.log('✅ Turso schema ready');
 
-    // Seed admin
-    const adminRes = await execute('SELECT id FROM users WHERE email = ?', ['admin@sarees.com']);
+    // Seed admin (email/password are env-configurable; the password is force-changed on first login)
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@sarees.com';
+    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+    const adminRes = await execute('SELECT id FROM users WHERE email = ?', [adminEmail]);
     if (adminRes.rows.length === 0) {
-      const passwordHash = bcrypt.hashSync('admin123', 10);
+      const passwordHash = bcrypt.hashSync(adminPassword, 10);
       await execute(
         'INSERT INTO users (name, email, password_hash, is_admin) VALUES (?, ?, ?, 1)',
-        ['Admin', 'admin@sarees.com', passwordHash]
+        ['Admin', adminEmail, passwordHash]
       );
-      console.log('👑 Admin user created: admin@sarees.com / admin123');
+      console.log(`👑 Admin user created (${adminEmail}). Change the password on first login.`);
     }
 
     // Seed categories
@@ -323,21 +330,23 @@ else {
       });
     });
 
-    // Seed admin
+    // Seed admin (email/password are env-configurable; the password is force-changed on first login)
     await new Promise((resolve) => {
-      db.get('SELECT id FROM users WHERE email = ?', ['admin@sarees.com'], (err, row) => {
+      const adminEmail = process.env.ADMIN_EMAIL || 'admin@sarees.com';
+      const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+      db.get('SELECT id FROM users WHERE email = ?', [adminEmail], (err, row) => {
         if (err) {
           console.error('Seed admin error:', err.message);
           return resolve();
         }
         if (row) return resolve();
-        const passwordHash = bcrypt.hashSync('admin123', 10);
+        const passwordHash = bcrypt.hashSync(adminPassword, 10);
         db.run(
           'INSERT INTO users (name, email, password_hash, is_admin) VALUES (?, ?, ?, 1)',
-          ['Admin', 'admin@sarees.com', passwordHash],
+          ['Admin', adminEmail, passwordHash],
           (insertErr) => {
             if (insertErr) console.error('Error seeding admin:', insertErr.message);
-            else console.log('👑 Admin user created: admin@sarees.com / admin123');
+            else console.log(`👑 Admin user created (${adminEmail}). Change the password on first login.`);
             resolve();
           }
         );

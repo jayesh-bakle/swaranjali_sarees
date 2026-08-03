@@ -18,6 +18,7 @@ const Orders = lazy(() => import('./pages/Orders'))
 const TrackOrder = lazy(() => import('./pages/TrackOrder'))
 const Login = lazy(() => import('./pages/Login'))
 const Register = lazy(() => import('./pages/Register'))
+const ChangePassword = lazy(() => import('./pages/ChangePassword'))
 const Admin = lazy(() => import('./pages/Admin'))
 const Success = lazy(() => import('./pages/Success'))
 const NotFound = lazy(() => import('./pages/NotFound'))
@@ -40,6 +41,7 @@ function App() {
             <Route path="/track-order/:id" element={<TrackOrder />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/change-password" element={<ChangePassword />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/success" element={<Success />} />
             <Route path="*" element={<NotFound />} />
