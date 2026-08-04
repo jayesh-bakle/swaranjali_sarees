@@ -1,5 +1,5 @@
-import { Suspense, lazy } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Suspense, lazy, useEffect } from 'react'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
 import WhatsAppPopup from './components/WhatsAppPopup'
@@ -25,9 +25,25 @@ const Admin = lazy(() => import('./pages/Admin'))
 const Success = lazy(() => import('./pages/Success'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 
+// SPA router tracking — fires a GA4 page_view on every route change (the
+// gtag 'config' in index.html only covers the initial load).
+function TrackPageView() {
+  const location = useLocation()
+  useEffect(() => {
+    if (typeof window.gtag === 'function') {
+      window.gtag('event', 'page_view', {
+        page_path: location.pathname + location.search,
+        page_title: document.title,
+      })
+    }
+  }, [location.pathname, location.search])
+  return null
+}
+
 function App() {
   return (
     <div className="min-h-screen flex flex-col">
+      <TrackPageView />
       <Navbar />
       <main className="flex-grow">
         <Suspense fallback={<LoadingSpinner text="Loading..." fullPage />}>
