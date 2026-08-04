@@ -59,6 +59,10 @@ services:
         sync: false    # optional
       - key: MAIL_FROM
         sync: false    # optional
+      # Base URL of the frontend — used to build absolute password-reset links
+      # in the forgot-password email. Override if you move to a custom domain.
+      - key: FRONTEND_URL
+        value: https://jagmohini-paithani.onrender.com
 
   # ── Frontend (static SPA) ────────────────────────────────────
   - type: web
@@ -76,3 +80,7 @@ services:
     envVars:
       - key: VITE_API_URL
         value: https://swaranjali-server.onrender.com/api
+      # Google Analytics 4 measurement ID (G-XXXXXXX). Paste your ID here or in the
+      # Render dashboard (Environment → VITE_GA_MEASUREMENT_ID) and redeploy.
+      - key: VITE_GA_MEASUREMENT_ID
+        sync: false    # e.g. G-ABCDE12345 — set your GA4 property ID

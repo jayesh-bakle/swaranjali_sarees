@@ -55,4 +55,38 @@ const sendOrderConfirmation = async ({ order, items = [], customer = {} }) => {
   }
 };
 
-module.exports = { sendOrderConfirmation };
+// Send a password-reset email with a single-use reset link. Never throws.
+const sendPasswordResetEmail = async ({ email, resetToken }) => {
+  const transport = getTransporter();
+  if (!transport || !email) return false;
+
+  const baseUrl = (process.env.FRONTEND_URL || 'https://jagmohini-paithani.onrender.com').replace(/\/$/, '');
+  const resetLink = `${baseUrl}/reset-password?token=${resetToken}`;
+
+  try {
+    await transport.sendMail({
+      from: process.env.MAIL_FROM || `"Jagmohini Paithani" <${process.env.MAIL_USER}>`,
+      to: email,
+      subject: 'Reset your password — Jagmohini Paithani',
+      text: [
+        'Hi,',
+        '',
+        'We received a request to reset your password.',
+        '',
+        `Open this link to choose a new password (valid for 1 hour):`,
+        resetLink,
+        '',
+        'If you did not request this, you can safely ignore this email.',
+        '',
+        '— Jagmohini Paithani',
+      ].join('\n'),
+    });
+    console.log(`📧 Password reset email sent to ${email}`);
+    return true;
+  } catch (err) {
+    console.error('Password reset email failed (non-fatal):', err.message);
+    return false;
+  }
+};
+
+module.exports = { sendOrderConfirmation, sendPasswordResetEmail };

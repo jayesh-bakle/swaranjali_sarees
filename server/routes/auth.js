@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { auth, generateToken } = require('../middleware/auth');
+const { sendPasswordResetEmail } = require('../utils/email');
 
 const router = express.Router();
 
@@ -204,8 +205,10 @@ router.post('/forgot-password', (req, res) => {
         [user.id, hash, expiresAt],
         (insertErr) => {
           if (insertErr) return res.json({ message: 'If an account exists, a reset link has been sent.' });
-          // In production, send an email with the reset link. For now, log it.
+          // Email the reset link when SMTP is configured; always log it as a fallback
+          // (the console line is also how you can grab the link during local dev).
           console.log(`🔑 Password reset token for ${lowerEmail}: /reset-password?token=${rawToken}`);
+          sendPasswordResetEmail({ email: lowerEmail, resetToken: rawToken });
           res.json({ message: 'If an account exists, a reset link has been sent.' });
         }
       );
