@@ -164,41 +164,51 @@ const validatePricing = ({ price, sale_price, stock }, fallbackPrice = null) => 
 router.get('/', (req, res) => {
   const { category, fabric, color, search, sort, min_price, max_price, in_stock, featured, page = 1, limit = 50 } = req.query;
 
-  const where = ['1=1'];
   const params = [];
-  // Escape LIKE wildcards so user input can't match everything
-  const like = (v) => String(v).replace(/[\\%_]/g, (c) => `\\${c}`);
+  let orderBy = 'p.created_at DESC';
+  let baseFrom = 'products p';
 
-  if (category) { where.push("p.category LIKE ? ESCAPE '\\'"); params.push(`%${like(category)}%`); }
-  if (fabric) { where.push("p.fabric LIKE ? ESCAPE '\\'"); params.push(`%${like(fabric)}%`); }
-  if (color) { where.push("p.color LIKE ? ESCAPE '\\'"); params.push(`%${like(color)}%`); }
+  // When a search query is present, join the FTS index for instant full-text
+  // search instead of the expensive LIKE '%…%' full-table scan.
+  let where = '1=1';
   if (search) {
-    where.push("(p.name LIKE ? ESCAPE '\\' OR p.description LIKE ? ESCAPE '\\' OR p.category LIKE ? ESCAPE '\\')");
-    params.push(`%${like(search)}%`, `%${like(search)}%`, `%${like(search)}%`);
+    // FTS5 match — strip non-alphanumeric chars to avoid syntax errors
+    const q = search.replace(/[^\w\s]/g, '').trim();
+    if (q) {
+      baseFrom = 'products p JOIN products_fts fts ON p.id = fts.rowid';
+      // Rank by relevance + recency; use MATCH + BM25
+      where = "fts.name MATCH ?";
+      params.push(q + '*'); // prefix match
+      orderBy = `rank, p.created_at DESC`;
+    }
   }
+
+  // Use exact match (=) for category/fabric/color — indexed lookups, not LIKE scans
+  if (category) { where += ' AND p.category = ?'; params.push(category); }
+  if (fabric) { where += ' AND p.fabric = ?'; params.push(fabric); }
+  if (color) { where += ' AND p.color = ?'; params.push(color); }
+
   // Price filters use the effective (sale) price when present
   const minP = parseFloat(min_price);
   const maxP = parseFloat(max_price);
-  if (Number.isFinite(minP) && minP > 0) { where.push('COALESCE(p.sale_price, p.price) >= ?'); params.push(minP); }
-  if (Number.isFinite(maxP) && maxP > 0) { where.push('COALESCE(p.sale_price, p.price) <= ?'); params.push(maxP); }
-  if (in_stock === 'true' || in_stock === '1') where.push('p.stock > 0');
-  // 'featured' is a filter (sort=featured kept for backwards-compat with the homepage)
-  if (featured === 'true' || featured === '1' || sort === 'featured') where.push('p.is_featured = 1');
+  if (Number.isFinite(minP) && minP > 0) { where += ' AND COALESCE(p.sale_price, p.price) >= ?'; params.push(minP); }
+  if (Number.isFinite(maxP) && maxP > 0) { where += ' AND COALESCE(p.sale_price, p.price) <= ?'; params.push(maxP); }
+  if (in_stock === 'true' || in_stock === '1') where += ' AND p.stock > 0';
+  if (featured === 'true' || featured === '1' || sort === 'featured') where += ' AND p.is_featured = 1';
 
-  let orderBy = 'p.created_at DESC';
+  // Sort options — use denormalized columns for rating/popularity
   if (sort === 'price_asc') orderBy = 'COALESCE(p.sale_price, p.price) ASC';
   else if (sort === 'price_desc') orderBy = 'COALESCE(p.sale_price, p.price) DESC';
-  else if (sort === 'rating') orderBy = 'avg_rating DESC';
+  else if (sort === 'rating') orderBy = 'p.avg_rating DESC NULLS LAST, p.review_count DESC';
+  else if (sort === 'popularity') orderBy = 'p.review_count DESC, p.created_at DESC';
 
   const limitNum = Math.min(Math.max(1, Number(limit) || 50), 100);
   const pageNum = Math.max(1, Number(page) || 1);
   const offset = (pageNum - 1) * limitNum;
 
-  const whereSql = where.join(' AND ');
-  const selectSql = `SELECT p.*,
-      (SELECT COUNT(*) FROM reviews r WHERE r.product_id = p.id) as review_count,
-      (SELECT AVG(rating) FROM reviews r WHERE r.product_id = p.id) as avg_rating
-    FROM products p WHERE ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`;
+  const whereSql = where;
+  const selectSql = `SELECT p.*
+    FROM ${baseFrom} WHERE ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`;
 
   db.all(selectSql, [...params, limitNum, offset], (err, rows) => {
     if (err) return res.status(500).json({ message: 'Server error' });
@@ -208,7 +218,7 @@ router.get('/', (req, res) => {
       review_count: p.review_count || 0
     }));
 
-    db.get(`SELECT COUNT(*) as total FROM products p WHERE ${whereSql}`, params, (cErr, countRow) => {
+    db.get(`SELECT COUNT(*) as total FROM ${baseFrom} WHERE ${whereSql}`, params, (cErr, countRow) => {
       if (cErr) return res.status(500).json({ message: 'Server error' });
       res.json({ products, total: countRow?.total || 0, page: pageNum, limit: limitNum });
     });
@@ -218,9 +228,7 @@ router.get('/', (req, res) => {
 // GET /api/products/featured - Get featured products
 router.get('/featured', (req, res) => {
   db.all(
-    `SELECT p.*,
-      (SELECT COUNT(*) FROM reviews r WHERE r.product_id = p.id) as review_count,
-      (SELECT AVG(rating) FROM reviews r WHERE r.product_id = p.id) as avg_rating
+    `SELECT p.*
      FROM products p WHERE p.is_featured = 1 AND p.stock > 0 ORDER BY p.created_at DESC LIMIT 8`,
     (err, rows) => {
       if (err) return res.status(500).json({ message: 'Server error' });
@@ -238,10 +246,8 @@ router.get('/related/:id', (req, res) => {
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
     db.all(
-      `SELECT p.*,
-        (SELECT COUNT(*) FROM reviews r WHERE r.product_id = p.id) as review_count,
-        (SELECT AVG(rating) FROM reviews r WHERE r.product_id = p.id) as avg_rating
-       FROM products p WHERE p.category = ? AND p.id != ? AND p.stock > 0 LIMIT 4`,
+      `SELECT p.*
+       FROM products p WHERE p.category = ? AND p.id != ? AND p.stock > 0 ORDER BY p.review_count DESC LIMIT 4`,
       [product.category, id],
       (relatedErr, rows) => {
         if (relatedErr) return res.status(500).json({ message: 'Server error' });
@@ -260,9 +266,7 @@ router.get('/:id', (req, res) => {
   }
 
   db.get(
-    `SELECT p.*,
-      (SELECT COUNT(*) FROM reviews r WHERE r.product_id = p.id) as review_count,
-      (SELECT AVG(rating) FROM reviews r WHERE r.product_id = p.id) as avg_rating
+    `SELECT p.*
      FROM products p WHERE p.id = ?`,
     [id],
     (err, row) => {
@@ -323,6 +327,9 @@ router.post('/', auth, admin, upload.array('images', 5), async (req, res) => {
         }
         const newId = this.lastID;
         db.get('SELECT * FROM products WHERE id = ?', [newId], (getErr, newProduct) => {
+          // Rebuild FTS so the new product is searchable
+          db.run("INSERT INTO products_fts(products_fts) VALUES('rebuild')", () => {});
+
           res.status(201).json({ message: 'Product created successfully!', product: formatProduct(newProduct) });
         });
       }
@@ -422,6 +429,8 @@ router.put('/:id', auth, admin, upload.array('images', 5), async (req, res) => {
             return res.status(500).json({ message: 'Server error' });
           }
           db.get('SELECT * FROM products WHERE id = ?', [id], (getErr, updated) => {
+            // Rebuild FTS so the product changes are searchable
+            db.run("INSERT INTO products_fts(products_fts) VALUES('rebuild')", () => {});
             res.json({ message: 'Product updated successfully!', product: formatProduct(updated) });
           });
         }
@@ -460,6 +469,8 @@ router.delete('/:id', auth, admin, (req, res) => {
       gallery.forEach(deleteImage);
       gallery.forEach(deleteLocalImage);
 
+      // Rebuild FTS so the product disappears from search
+      db.run("INSERT INTO products_fts(products_fts) VALUES('rebuild')", () => {});
       res.json({ message: 'Product deleted successfully!' });
     });
   });

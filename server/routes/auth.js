@@ -179,4 +179,66 @@ router.post('/logout', auth, (req, res) => {
   );
 });
 
+// POST /api/auth/forgot-password - Request a password reset token.
+// Always returns the same message to prevent email-enumeration.
+const crypto = require('crypto');
+const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+router.post('/forgot-password', (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.json({ message: 'If an account exists, a reset link has been sent.' });
+
+  const lowerEmail = String(email).toLowerCase().trim();
+  db.get('SELECT id FROM users WHERE email = ?', [lowerEmail], (err, user) => {
+    // Always return the same response — don't reveal whether the email exists
+    if (err || !user) return res.json({ message: 'If an account exists, a reset link has been sent.' });
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const hash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = Date.now() + RESET_TTL_MS;
+
+    // Invalidate any previous unused tokens for this user
+    db.run('DELETE FROM reset_tokens WHERE user_id = ? AND used = 0', [user.id], () => {
+      db.run(
+        'INSERT INTO reset_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)',
+        [user.id, hash, expiresAt],
+        (insertErr) => {
+          if (insertErr) return res.json({ message: 'If an account exists, a reset link has been sent.' });
+          // In production, send an email with the reset link. For now, log it.
+          console.log(`🔑 Password reset token for ${lowerEmail}: /reset-password?token=${rawToken}`);
+          res.json({ message: 'If an account exists, a reset link has been sent.' });
+        }
+      );
+    });
+  });
+});
+
+// POST /api/auth/reset-password - Reset password using the token from the email link.
+router.post('/reset-password', (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) return res.status(400).json({ message: 'Token and new password are required' });
+  if (password.length < 8 || password.length > 72) {
+    return res.status(400).json({ message: 'Password must be between 8 and 72 characters' });
+  }
+
+  const hash = crypto.createHash('sha256').update(String(token)).digest('hex');
+  db.get(
+    'SELECT * FROM reset_tokens WHERE token_hash = ? AND used = 0 AND expires_at > ?',
+    [hash, Date.now()],
+    (err, row) => {
+      if (err || !row) return res.status(400).json({ message: 'Invalid or expired reset token' });
+
+      bcrypt.hash(password, 10, (hashErr, passwordHash) => {
+        if (hashErr) return res.status(500).json({ message: 'Server error' });
+        db.run('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, row.user_id], (updateErr) => {
+          if (updateErr) return res.status(500).json({ message: 'Server error' });
+          // Mark the token as used
+          db.run('UPDATE reset_tokens SET used = 1 WHERE id = ?', [row.id], () => {});
+          res.json({ message: 'Password has been reset. You can now log in.' });
+        });
+      });
+    }
+  );
+});
+
 module.exports = router;

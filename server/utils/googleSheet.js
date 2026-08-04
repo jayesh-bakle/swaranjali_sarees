@@ -1,4 +1,4 @@
-const { google } = require('googleapis');
+let google = null; // lazy-loaded only when Sheets is configured (saves ~5s at boot)
 
 /**
  * Google Sheets integration — appends order rows to a Google Sheet.
@@ -22,6 +22,11 @@ function getSheetsClient() {
   if (!GOOGLE_SHEET_ID || !GOOGLE_SERVICE_ACCOUNT_JSON) {
     console.warn('[GoogleSheet] GOOGLE_SHEET_ID or GOOGLE_SERVICE_ACCOUNT_JSON not set — skipping.');
     return null;
+  }
+
+  // Lazy-load the googleapis module (saves ~5s at boot when Sheets is unused)
+  if (!google) {
+    try { google = require('googleapis').google; } catch (_) { return null; }
   }
 
   try {

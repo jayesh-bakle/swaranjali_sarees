@@ -4,11 +4,13 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧵</text></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#b8860b" />
+    <link rel="manifest" href="/manifest.json" />
     <meta name="description" content="Shop authentic handwoven Paithani, Banarasi & Kanjivaram silk sarees from Yeola, Maharashtra. Free shipping across India." />
     <!-- Security: Content-Security-Policy + Referrer-Policy. The API and Google Fonts are
          allow-listed; Razorpay needs script/frame/connect access for the checkout modal.
          If you deploy the API to a different host, add it to connect-src. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' http://localhost:5000 http://127.0.0.1:5000 https://checkout.razorpay.com https://api.razorpay.com https://swaranjali-server.onrender.com; frame-src https://checkout.razorpay.com https://api.razorpay.com; object-src 'none'; base-uri 'self'; form-action 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://checkout.razorpay.com https://www.googletagmanager.com https://www.google-analytics.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' http://localhost:5000 http://127.0.0.1:5000 https://checkout.razorpay.com https://api.razorpay.com https://swaranjali-server.onrender.com https://www.google-analytics.com https://www.googletagmanager.com; frame-src https://checkout.razorpay.com https://api.razorpay.com; object-src 'none'; base-uri 'self'; form-action 'self'" />
     <meta name="referrer" content="no-referrer" />
     <meta property="og:title" content="Jagmohini Paithani — Authentic Silk Sarees" />
     <meta property="og:description" content="Handwoven pure silk sarees with genuine gold zari. Crafted by master weavers of Yeola, Maharashtra." />
@@ -16,6 +18,25 @@
     <title>Jagmohini Paithani — Authentic Silk Sarees</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Warm up the connections for the API + image CDN (removes DNS/TLS from the first request) -->
+    <link rel="preconnect" href="https://swaranjali-server.onrender.com" crossorigin />
+    <link rel="preconnect" href="https://res.cloudinary.com" crossorigin />
+    <!-- Google Analytics (GA4) — set VITE_GA_MEASUREMENT_ID at build time to enable -->
+    <script>
+      (function () {
+        var id = '%VITE_GA_MEASUREMENT_ID%';
+        if (!id || id.indexOf('G-') !== 0) return;
+        var s = document.createElement('script');
+        s.async = true;
+        s.src = 'https://www.googletagmanager.com/gtag/js?id=' + id;
+        document.head.appendChild(s);
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+        gtag('config', id);
+        window.gtag = gtag;
+      })();
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet" />
   </head>
   <body>

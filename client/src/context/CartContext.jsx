@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useReducer } from 'react'
+import { createContext, useContext, useEffect, useMemo, useReducer } from 'react'
 import toast from 'react-hot-toast'
 
 const CartContext = createContext(null)
@@ -125,10 +125,14 @@ export function CartProvider({ children }) {
     0
   ))
 
+  // Memoize the value object — addToCart on one card shouldn't re-render every consumer
+  const value = useMemo(
+    () => ({ items: state.items, addItem, removeItem, updateQuantity, clearCart, totalItems, totalPrice, savings }),
+    [state.items, totalItems, totalPrice, savings]
+  )
+
   return (
-    <CartContext.Provider
-      value={{ items: state.items, addItem, removeItem, updateQuantity, clearCart, totalItems, totalPrice, savings }}
-    >
+    <CartContext.Provider value={value}>
       {children}
     </CartContext.Provider>
   )

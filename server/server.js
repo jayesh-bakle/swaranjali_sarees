@@ -5,9 +5,30 @@ const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const path = require('path');
 const dotenv = require('dotenv');
+const NodeCache = require('node-cache');
 
 // Load environment variables
 dotenv.config();
+
+// Server-side response cache for read-heavy catalog endpoints (skip authed requests)
+const catalogCache = new NodeCache({ stdTTL: 60, checkperiod: 30 }); // 60s default TTL
+const cacheCatalog = (req, res, next) => {
+  if (req.method !== 'GET' || req.headers.authorization) return next(); // skip authed/admin
+  const key = req.originalUrl;
+  const cached = catalogCache.get(key);
+  if (cached) {
+    res.set('X-Cache', 'HIT');
+    return res.json(cached);
+  }
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      catalogCache.set(key, body);
+    }
+    return originalJson(body);
+  };
+  next();
+};
 
 // Initialize database (creates tables & seeds admin)
 const db = require('./db');
@@ -21,6 +42,9 @@ const reviewRoutes = require('./routes/reviews');
 const addressRoutes = require('./routes/addresses');
 const categoryRoutes = require('./routes/categories');
 const adminRoutes = require('./routes/admin');
+const couponRoutes = require('./routes/coupons');
+const shippingRoutes = require('./routes/shipping');
+const invoiceRoutes = require('./routes/invoice');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -104,14 +128,17 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), { dotfiles: 
 
 // Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/products', productRoutes);
+app.use('/api/products', cacheCatalog, productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/addresses', addressRoutes);
-app.use('/api/categories', categoryRoutes);
+app.use('/api/categories', cacheCatalog, categoryRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/coupons', couponRoutes);
+app.use('/api/shipping', shippingRoutes);
+app.use('/api/invoice', invoiceRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {

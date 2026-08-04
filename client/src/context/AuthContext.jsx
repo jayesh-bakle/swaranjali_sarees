@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useMemo } from 'react'
 import API from '../api/client'
 
 const AuthContext = createContext(null)
@@ -92,8 +92,14 @@ export function AuthProvider({ children }) {
 
   const isAdmin = user?.is_admin === 1 || user?.is_admin === true
 
+  // Memoize so unrelated re-renders of the provider don't re-render every consumer
+  const value = useMemo(
+    () => ({ user, token, loading, error, login, register, logout, changePassword, isAdmin }),
+    [user, token, loading, error, isAdmin]
+  )
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, error, login, register, logout, changePassword, isAdmin }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )

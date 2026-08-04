@@ -16,32 +16,24 @@ router.use(auth, (req, res, next) => {
   next();
 });
 
-// GET /api/admin/stats - Dashboard statistics
+// GET /api/admin/stats - Dashboard statistics (single query instead of 8 separate scans)
 router.get('/stats', (req, res) => {
-  const queries = {
-    total_revenue: `SELECT COALESCE(SUM(total), 0) as value FROM orders WHERE status != 'cancelled'`,
-    total_orders: `SELECT COUNT(*) as value FROM orders`,
-    total_products: `SELECT COUNT(*) as value FROM products`,
-    total_customers: `SELECT COUNT(*) as value FROM users WHERE is_admin = 0`,
-    low_stock: `SELECT COUNT(*) as value FROM products WHERE stock <= 5`,
-    out_of_stock: `SELECT COUNT(*) as value FROM products WHERE stock = 0`,
-    pending_orders: `SELECT COUNT(*) as value FROM orders WHERE status IN ('pending', 'confirmed', 'processing')`,
-    delivered_orders: `SELECT COUNT(*) as value FROM orders WHERE status = 'delivered'`
-  };
-
-  const results = {};
-  let pending = Object.keys(queries).length;
-
-  Object.entries(queries).forEach(([key, sql]) => {
-    db.get(sql, (err, row) => {
-      if (!err) results[key] = row.value;
-      else results[key] = 0;
-      pending--;
-      if (pending === 0) {
-        res.json({ stats: results });
-      }
-    });
-  });
+  db.get(
+    `SELECT
+       COALESCE(SUM(CASE WHEN status != 'cancelled' THEN total END), 0) as total_revenue,
+       COUNT(*) as total_orders,
+       (SELECT COUNT(*) FROM products) as total_products,
+       (SELECT COUNT(*) FROM users WHERE is_admin = 0) as total_customers,
+       (SELECT COUNT(*) FROM products WHERE stock <= 5) as low_stock,
+       (SELECT COUNT(*) FROM products WHERE stock = 0) as out_of_stock,
+       COUNT(CASE WHEN status IN ('pending', 'confirmed', 'processing') THEN 1 END) as pending_orders,
+       COUNT(CASE WHEN status = 'delivered' THEN 1 END) as delivered_orders
+     FROM orders`,
+    (err, row) => {
+      if (err) return res.status(500).json({ message: 'Server error' });
+      res.json({ stats: row || {} });
+    }
+  );
 });
 
 // GET /api/admin/revenue-trend - Revenue by month (last 6 months)
@@ -61,18 +53,15 @@ router.get('/revenue-trend', (req, res) => {
   );
 });
 
-// GET /api/admin/top-products - Top selling products (correlated per product)
+// GET /api/admin/top-products - Top selling products (via normalized order_items)
 router.get('/top-products', (req, res) => {
   db.all(
     `SELECT p.id, p.name, p.image_url, p.price, p.stock,
-            COUNT(DISTINCT o.id) as orders_count,
-            COALESCE(SUM(o.total), 0) as revenue
+            COUNT(DISTINCT oi.order_id) as orders_count,
+            COALESCE(SUM(oi.quantity * oi.price), 0) as revenue
      FROM products p
-     LEFT JOIN (
-       SELECT DISTINCT o.id, o.status, o.total,
-              CAST(json_extract(item.value, '$.id') AS INTEGER) as product_id
-       FROM orders o, json_each(o.items) item
-     ) o ON o.product_id = p.id AND o.status != 'cancelled'
+     LEFT JOIN order_items oi ON oi.product_id = p.id
+     LEFT JOIN orders o ON o.id = oi.order_id AND o.status != 'cancelled'
      GROUP BY p.id
      ORDER BY revenue DESC
      LIMIT 10`,
@@ -114,9 +103,7 @@ router.get('/recent-orders', (req, res) => {
 router.get('/inventory-report', (req, res) => {
   db.all(
     `SELECT p.id, p.name, p.category, p.price, p.stock, p.is_featured,
-            p.sale_price, p.image_url,
-            (SELECT COUNT(*) FROM reviews r WHERE r.product_id = p.id) as review_count,
-            (SELECT AVG(rating) FROM reviews r WHERE r.product_id = p.id) as avg_rating
+            p.sale_price, p.image_url, p.review_count, p.avg_rating
      FROM products p
      ORDER BY p.stock ASC`,
     (err, rows) => {

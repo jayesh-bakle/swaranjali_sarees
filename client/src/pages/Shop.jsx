@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import API from '../api/client'
 import ProductCard from '../components/ProductCard'
 import LoadingSpinner from '../components/LoadingSpinner'
 import EmptyState from '../components/EmptyState'
+import { usePageMeta } from '../utils/usePageMeta'
 
 export default function Shop() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -17,6 +18,11 @@ export default function Shop() {
   const [colors, setColors] = useState([])
   const [mobileFilters, setMobileFilters] = useState(false)
 
+  usePageMeta({
+    title: 'Shop Silk Sarees',
+    description: 'Browse handwoven Paithani, Banarasi & Kanjivaram silk sarees. Filter by category, fabric and color.',
+  })
+
   const PAGE_SIZE = 50
 
   const category = searchParams.get('category') || ''
@@ -25,7 +31,18 @@ export default function Shop() {
   const search = searchParams.get('search') || ''
   const sort = searchParams.get('sort') || 'newest'
 
+  // Local search input state + debounce so each keystroke doesn't fire an API call
+  const [searchInput, setSearchInput] = useState(search)
+  const debounceRef = useRef(null)
+  useEffect(() => { setSearchInput(search) }, [search])
+  const updateSearch = (value) => {
+    setSearchInput(value)
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => updateFilter('search', value), 300)
+  }
+
   useEffect(() => {
+    const controller = new AbortController()
     const fetchProducts = async () => {
       setLoading(true)
       try {
@@ -36,7 +53,7 @@ export default function Shop() {
         if (search) params.search = search
         if (sort) params.sort = sort
 
-        const { data } = await API.get('/products', { params })
+        const { data } = await API.get('/products', { params, signal: controller.signal })
         setProducts((prev) => (page === 1 ? data.products : [...prev, ...data.products]))
         setTotal(data.total || 0)
         setError(false)
@@ -51,6 +68,7 @@ export default function Shop() {
           setColors(cols)
         }
       } catch (err) {
+        if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') return // stale request
         console.error('Error fetching products:', err)
         setError(true)
       } finally {
@@ -58,6 +76,7 @@ export default function Shop() {
       }
     }
     fetchProducts()
+    return () => controller.abort() // cancel in-flight request when filters change
   }, [category, fabric, colorParam, search, sort, page])
 
   const updateFilter = (key, value) => {
@@ -86,8 +105,8 @@ export default function Shop() {
         <input
           type="search"
           placeholder="Search sarees..."
-          value={search}
-          onChange={(e) => updateFilter('search', e.target.value)}
+          value={searchInput}
+          onChange={(e) => updateSearch(e.target.value)}
           className="input"
         />
       </div>
@@ -199,6 +218,8 @@ export default function Shop() {
               <option value="newest">Sort: Newest</option>
               <option value="price_asc">Sort: Price: Low to High</option>
               <option value="price_desc">Sort: Price: High to Low</option>
+              <option value="rating">Sort: Top Rated</option>
+              <option value="popularity">Sort: Most Popular</option>
             </select>
           </div>
 

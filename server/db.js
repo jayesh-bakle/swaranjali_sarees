@@ -108,6 +108,7 @@ const SCHEMA = [
     rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
     title TEXT,
     comment TEXT,
+    photos TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(product_id, user_id),
     FOREIGN KEY (product_id) REFERENCES products (id),
@@ -154,6 +155,43 @@ const SCHEMA = [
     jti TEXT PRIMARY KEY,
     expires_at INTEGER NOT NULL
   )`,
+  // Normalized order line-items. The orders.items JSON column is kept for
+  // backward-compat display, but every aggregation/report reads this table.
+  `CREATE TABLE IF NOT EXISTS order_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    product_name TEXT NOT NULL,
+    quantity INTEGER NOT NULL CHECK (quantity >= 1),
+    price REAL NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products (id)
+  )`,
+  // Discount coupons (code → percentage/amount off, optional minimum order).
+  `CREATE TABLE IF NOT EXISTS coupons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    discount_type TEXT NOT NULL CHECK (discount_type IN ('percent', 'flat')),
+    discount_value REAL NOT NULL CHECK (discount_value > 0),
+    min_order_amount REAL DEFAULT 0,
+    max_discount_amount REAL,
+    active INTEGER DEFAULT 1,
+    usage_limit INTEGER,
+    used_count INTEGER DEFAULT 0,
+    expires_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`,
+  // One-time password-reset tokens (expire, single-use).
+  `CREATE TABLE IF NOT EXISTS reset_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token_hash TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+  )`,
   `CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -175,8 +213,28 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_addresses_user ON addresses (user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_payments_order ON payments (order_id)`,
   `CREATE INDEX IF NOT EXISTS idx_tracking_order ON order_tracking (order_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_blacklist_expires ON token_blacklist (expires_at)`
+  `CREATE INDEX IF NOT EXISTS idx_blacklist_expires ON token_blacklist (expires_at)`,
+  // Order-by-columns used by every paginated list (turns full sorts into index scans)
+  `CREATE INDEX IF NOT EXISTS idx_orders_created ON orders (created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_products_created ON products (created_at)`,
+  // order_items lookups for admin reports + the review purchase check
+  `CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items (order_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items (product_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_order_items_user_order ON orders (user_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_coupons_code ON coupons (code)`,
+  `CREATE INDEX IF NOT EXISTS idx_reset_tokens_token ON reset_tokens (token_hash)`
 ];
+
+// Full-text search table for product name/description/category. FTS5 replaces
+// the LIKE '%…%' scan on search and is orders of magnitude faster. The content
+// table is external so rows stay in sync with products.
+const FTS_SCHEMA = `
+  CREATE VIRTUAL TABLE IF NOT EXISTS products_fts USING fts5(
+    name, description, category,
+    content='products',
+    content_rowid='id',
+    tokenize='unicode61'
+  )`;
 
 let db = null;
 
@@ -239,8 +297,44 @@ if (useTurso) {
       if (pcols.rows && !pcols.rows.some((c) => c.name === 'images')) {
         await execute('ALTER TABLE products ADD COLUMN images TEXT');
       }
+      // Denormalized rating columns (removes per-row subqueries from catalog lists)
+      if (!pcols.rows.some((c) => c.name === 'avg_rating')) {
+        await execute('ALTER TABLE products ADD COLUMN avg_rating REAL');
+      }
+      if (!pcols.rows.some((c) => c.name === 'review_count')) {
+        await execute('ALTER TABLE products ADD COLUMN review_count INTEGER DEFAULT 0');
+      }
     } catch (err) {
       console.error('Products images migration failed:', err.message);
+    }
+
+    // Add photos column to reviews if missing (existing DBs) — photo reviews
+    try {
+      const rcols = await execute('PRAGMA table_info(reviews)');
+      if (rcols.rows && !rcols.rows.some((c) => c.name === 'photos')) {
+        await execute('ALTER TABLE reviews ADD COLUMN photos TEXT');
+      }
+    } catch (err) {
+      console.error('Reviews photos migration failed:', err.message);
+    }
+
+    // Full-text search index + backfill (Turso supports FTS5 via libsql)
+    try {
+      await execute(FTS_SCHEMA);
+      await execute("INSERT INTO products_fts(products_fts) VALUES('rebuild')");
+    } catch (err) {
+      console.error('FTS index init failed:', err.message);
+    }
+
+    // Backfill denormalized ratings from the reviews table (existing DBs)
+    try {
+      await execute(
+        `UPDATE products SET
+           avg_rating = (SELECT AVG(rating) FROM reviews r WHERE r.product_id = products.id),
+           review_count = (SELECT COUNT(*) FROM reviews r WHERE r.product_id = products.id)`
+      );
+    } catch (err) {
+      console.error('Ratings backfill failed:', err.message);
     }
 
     // Seed admin (email/password are env-configurable; the password is force-changed on first login)
@@ -265,6 +359,21 @@ if (useTurso) {
       console.log('🏷️ Seeded sample categories');
     }
 
+    // Seed a starter coupon so the checkout coupon box has something to try
+    try {
+      const coupRes = await execute('SELECT COUNT(*) as count FROM coupons');
+      if (Number(coupRes.rows[0].count) === 0) {
+        await execute(
+          `INSERT INTO coupons (code, discount_type, discount_value, min_order_amount, max_discount_amount, usage_limit, expires_at, active)
+           VALUES (?, ?, ?, ?, ?, ?, NULL, 1)`,
+          ['WELCOME10', 'percent', 10, 999, 500, 500]
+        );
+        console.log('🎟️ Seeded WELCOME10 coupon (10% off, max ₹500)');
+      }
+    } catch (err) {
+      console.error('Coupon seed failed:', err.message);
+    }
+
     // Seed products
     const prodRes = await execute('SELECT COUNT(*) as count FROM products');
     if (Number(prodRes.rows[0].count) === 0) {
@@ -286,6 +395,22 @@ if (useTurso) {
       }
     } catch (err) {
       console.error('Products images backfill failed:', err.message);
+    }
+
+    // Backfill order_items from orders.items JSON column (existing DBs)
+    try {
+      const orphans = await execute("SELECT id, items FROM orders WHERE id NOT IN (SELECT DISTINCT order_id FROM order_items)");
+      for (const row of orphans.rows || []) {
+        const items = JSON.parse(row.items || '[]');
+        for (const item of items) {
+          await execute(
+            'INSERT INTO order_items (order_id, product_id, product_name, quantity, price) VALUES (?, ?, ?, ?, ?)',
+            [row.order_id || row.id, item.id, item.name || '', item.quantity || 1, item.price || 0]
+          );
+        }
+      }
+    } catch (err) {
+      console.error('Order items backfill failed:', err.message);
     }
 
     console.log('🚀 Turso database ready (free tier: data persists forever)');
@@ -355,12 +480,44 @@ else {
     await new Promise((resolve, reject) => {
       db.all('PRAGMA table_info(products)', (err, columns) => {
         if (err) return reject(err);
+        const alters = [];
         if (columns && !columns.some((c) => c.name === 'images')) {
-          db.run('ALTER TABLE products ADD COLUMN images TEXT', (e) => (e ? reject(e) : resolve()));
-        } else {
-          resolve();
+          alters.push(new Promise((r) => db.run('ALTER TABLE products ADD COLUMN images TEXT', (e) => (e ? r(e) : r()))));
         }
+        if (columns && !columns.some((c) => c.name === 'avg_rating')) {
+          alters.push(new Promise((r) => db.run('ALTER TABLE products ADD COLUMN avg_rating REAL', (e) => (e ? r(e) : r()))));
+        }
+        if (columns && !columns.some((c) => c.name === 'review_count')) {
+          alters.push(new Promise((r) => db.run('ALTER TABLE products ADD COLUMN review_count INTEGER DEFAULT 0', (e) => (e ? r(e) : r()))));
+        }
+        Promise.all(alters).then(resolve).catch(reject);
       });
+    });
+
+    // Add photos column to reviews if missing (existing DBs) — photo reviews
+    await new Promise((resolve) => {
+      db.all('PRAGMA table_info(reviews)', (err, columns) => {
+        if (err || (columns && columns.some((c) => c.name === 'photos'))) return resolve();
+        db.run('ALTER TABLE reviews ADD COLUMN photos TEXT', () => resolve());
+      });
+    });
+
+    // Full-text search index (SQLite3 supports FTS5 when compiled with it)
+    await new Promise((resolve) => {
+      db.run(FTS_SCHEMA, () => {
+        // Rebuild FTS content from the products table
+        db.run("INSERT INTO products_fts(products_fts) VALUES('rebuild')", () => resolve());
+      });
+    });
+
+    // Backfill denormalized ratings from the reviews table (existing DBs)
+    await new Promise((resolve) => {
+      db.run(
+        `UPDATE products SET
+           avg_rating = (SELECT AVG(rating) FROM reviews r WHERE r.product_id = products.id),
+           review_count = (SELECT COUNT(*) FROM reviews r WHERE r.product_id = products.id)`,
+        () => resolve()
+      );
     });
 
     // Seed admin (email/password are env-configurable; the password is force-changed on first login)
@@ -403,6 +560,22 @@ else {
       });
     });
 
+    // Seed a starter coupon so the checkout coupon box has something to try
+    await new Promise((resolve) => {
+      db.get('SELECT COUNT(*) as count FROM coupons', (err, row) => {
+        if (err || row.count > 0) return resolve();
+        db.run(
+          `INSERT INTO coupons (code, discount_type, discount_value, min_order_amount, max_discount_amount, usage_limit, expires_at, active)
+           VALUES (?, ?, ?, ?, ?, ?, NULL, 1)`,
+          ['WELCOME10', 'percent', 10, 999, 500, 500],
+          (insertErr) => {
+            if (!insertErr) console.log('🎟️ Seeded WELCOME10 coupon (10% off, max ₹500)');
+            resolve();
+          }
+        );
+      });
+    });
+
     // Seed products
     await new Promise((resolve) => {
       db.get('SELECT COUNT(*) as count FROM products', (err, row) => {
@@ -433,6 +606,26 @@ else {
           new Promise((r) => db.run('UPDATE products SET images = ? WHERE id = ?', [JSON.stringify([row.image_url]), row.id], r))
         );
         Promise.all(updates).then(resolve).catch(reject);
+      });
+    });
+
+    // Backfill order_items from the orders.items JSON column (existing DBs)
+    await new Promise((resolve) => {
+      db.all("SELECT id, items FROM orders WHERE id NOT IN (SELECT DISTINCT order_id FROM order_items)", (err, rows) => {
+        if (err || !rows || rows.length === 0) return resolve();
+        const stmt = db.prepare('INSERT INTO order_items (order_id, product_id, product_name, quantity, price) VALUES (?, ?, ?, ?, ?)');
+        let inserted = 0;
+        const done = () => { if (++inserted === rows.length) { stmt.finalize(resolve); } };
+        rows.forEach((row) => {
+          try {
+            const items = JSON.parse(row.items || '[]');
+            if (!items.length) { done(); return; }
+            items.forEach((item) => {
+              stmt.run(row.order_id, item.id, item.name || '', item.quantity || 1, item.price || 0);
+            });
+          } catch (_) { /* skip malformed */ }
+          done();
+        });
       });
     });
 

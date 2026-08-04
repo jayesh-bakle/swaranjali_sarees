@@ -4,6 +4,7 @@ const { auth } = require('../middleware/auth');
 const { appendOrderToSheet } = require('../utils/googleSheet');
 const { sendOrderConfirmation } = require('../utils/email');
 const { issueRefund } = require('../utils/razorpay');
+const { sendOrderWhatsApp } = require('../utils/whatsapp');
 
 const router = express.Router();
 
@@ -86,7 +87,7 @@ router.post('/', auth, (req, res) => {
     return res.status(403).json({ message: 'Admins manage the store. Only customers can place orders.' });
   }
 
-  const { shipping_address, phone, payment_method } = req.body;
+  const { shipping_address, phone, payment_method, coupon_code } = req.body;
 
   if (!shipping_address || !String(shipping_address).trim()) {
     return res.status(400).json({ message: 'Shipping address is required' });
@@ -125,54 +126,92 @@ router.post('/', auth, (req, res) => {
       const reserved = [];
       let i = 0;
 
+      // Apply a coupon discount if a valid code was supplied (server-side, never trusted from client)
+      const applyCoupon = (subtotal, cb) => {
+        if (!coupon_code) return cb(0);
+        const upperCode = String(coupon_code).toUpperCase().trim();
+        db.get('SELECT * FROM coupons WHERE code = ? AND active = 1', [upperCode], (err, coupon) => {
+          if (err || !coupon) return cb(0);
+          if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) return cb(0);
+          if (coupon.usage_limit && coupon.used_count >= coupon.usage_limit) return cb(0);
+          if (subtotal < (coupon.min_order_amount || 0)) return cb(0);
+          let discount = coupon.discount_type === 'percent'
+            ? (subtotal * coupon.discount_value) / 100
+            : coupon.discount_value;
+          if (coupon.max_discount_amount && discount > coupon.max_discount_amount) discount = coupon.max_discount_amount;
+          discount = Math.min(discount, subtotal);
+          // Increment usage counter
+          db.run('UPDATE coupons SET used_count = used_count + 1 WHERE id = ?', [coupon.id], () => {});
+          return cb(Math.round(discount * 100) / 100);
+        });
+      };
+
       const createOrder = () => {
-        // Recompute the total from server-side prices
-        const total = items.reduce((sum, item) => {
+        // Recompute the subtotal from server-side prices
+        const subtotal = items.reduce((sum, item) => {
           const p = byId.get(item.id);
           return sum + (p.sale_price != null ? p.sale_price : p.price) * item.quantity;
         }, 0);
 
-        // Razorpay orders start 'pending' — they're only marked paid after a verified payment.
-        const orderStatus = paymentMethod === 'razorpay' ? 'pending' : 'confirmed';
-        const orderItems = items.map((item) => {
-          const p = byId.get(item.id);
-          return {
-            id: p.id,
-            name: p.name,
-            price: p.sale_price != null ? p.sale_price : p.price,
-            quantity: item.quantity,
-          };
-        });
+        applyCoupon(subtotal, (discount) => {
+          const total = Math.max(0, subtotal - discount);
 
-        db.run(
-          `INSERT INTO orders (user_id, items, total, shipping_address, phone, status, payment_status, payment_method)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [req.user.id, JSON.stringify(orderItems), total, String(shipping_address).trim(), phone || '', orderStatus, 'pending', paymentMethod],
-          function (insertErr) {
-            if (insertErr) {
-              restoreStock(items, () => res.status(500).json({ message: 'Server error' }));
-              return;
+          // Razorpay orders start 'pending' — they're only marked paid after a verified payment.
+          const orderStatus = paymentMethod === 'razorpay' ? 'pending' : 'confirmed';
+          const orderItems = items.map((item) => {
+            const p = byId.get(item.id);
+            return {
+              id: p.id,
+              name: p.name,
+              price: p.sale_price != null ? p.sale_price : p.price,
+              quantity: item.quantity,
+            };
+          });
+
+          db.run(
+            `INSERT INTO orders (user_id, items, total, shipping_address, phone, status, payment_status, payment_method)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [req.user.id, JSON.stringify(orderItems), total, String(shipping_address).trim(), phone || '', orderStatus, 'pending', paymentMethod],
+            function (insertErr) {
+              if (insertErr) {
+                restoreStock(items, () => res.status(500).json({ message: 'Server error' }));
+                return;
+              }
+
+              const orderId = this.lastID;
+
+              // Insert into the normalized order_items table (used for aggregation reports)
+              const itemStmt = 'INSERT INTO order_items (order_id, product_id, product_name, quantity, price) VALUES (?, ?, ?, ?, ?)';
+              orderItems.forEach((item) => {
+                db.run(itemStmt, [orderId, item.id, item.name, item.quantity, item.price], (err) => {
+                  if (err) console.error('order_items insert error:', err.message);
+                });
+              });
+
+              // Rebuild FTS index for new/updated products (fire-and-forget)
+              db.run("INSERT INTO products_fts(products_fts) VALUES('rebuild')", () => {});
+
+              addTracking(orderId, orderStatus, paymentMethod === 'cod' ? 'Order placed. Pay on delivery.' : 'Order placed. Awaiting payment confirmation.');
+
+              // Best-effort order logging + email + WhatsApp (never blocks or fails the request)
+              db.get('SELECT name, email FROM users WHERE id = ?', [req.user.id], (userErr, userRow) => {
+                const orderSummary = { id: orderId, total, shipping_address, payment_method: paymentMethod, status: orderStatus };
+                appendOrderToSheet(
+                  { ...orderSummary, phone: phone || '', payment_status: 'pending' },
+                  orderItems,
+                  userRow || {}
+                ).catch(() => {});
+                sendOrderConfirmation({ order: orderSummary, items: orderItems, customer: userRow || {} });
+                sendOrderWhatsApp(orderSummary, orderItems, { name: userRow?.name || '', phone: phone || '' });
+              });
+
+              db.get('SELECT * FROM orders WHERE id = ?', [orderId], (getErr, order) => {
+                if (getErr) return res.status(500).json({ message: 'Server error' });
+                res.status(201).json({ message: 'Order placed successfully!', order: formatOrder(order) });
+              });
             }
-
-            const orderId = this.lastID;
-            addTracking(orderId, orderStatus, paymentMethod === 'cod' ? 'Order placed. Pay on delivery.' : 'Order placed. Awaiting payment confirmation.');
-
-            // Best-effort order logging + email (never blocks or fails the request)
-            db.get('SELECT name, email FROM users WHERE id = ?', [req.user.id], (userErr, userRow) => {
-              appendOrderToSheet(
-                { id: orderId, phone: phone || '', shipping_address, payment_method: paymentMethod, payment_status: 'pending', status: orderStatus, total },
-                orderItems,
-                userRow || {}
-              ).catch(() => {});
-              sendOrderConfirmation({ order: { id: orderId, total, payment_method: paymentMethod }, items: orderItems, customer: userRow || {} });
-            });
-
-            db.get('SELECT * FROM orders WHERE id = ?', [orderId], (getErr, order) => {
-              if (getErr) return res.status(500).json({ message: 'Server error' });
-              res.status(201).json({ message: 'Order placed successfully!', order: formatOrder(order) });
-            });
-          }
-        );
+          );
+        });
       };
 
       const reserveNext = (updateErr, changes) => {

@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /cart
+Disallow: /checkout
+Disallow: /wishlist
+Disallow: /account
+
+Sitemap: https://jagmohini-paithani.onrender.com/sitemap.xml

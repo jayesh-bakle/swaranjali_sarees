@@ -249,6 +249,23 @@ export default function TrackOrder() {
         </div>
       )}
 
+      {/* Download / print invoice */}
+      <div className="mb-6 flex justify-end">
+        <button
+          onClick={async () => {
+            try {
+              const res = await API.get(`/invoice/${order.id}`, { responseType: 'text' })
+              const blob = new Blob([res.data], { type: 'text/html' })
+              const url = URL.createObjectURL(blob)
+              window.open(url, '_blank')
+            } catch (_) { toast.error('Could not load invoice') }
+          }}
+          className="text-sm text-primary-700 hover:text-primary-800 font-medium border border-primary-200 rounded-lg px-4 py-2 hover:bg-primary-50 transition-colors"
+        >
+          🧾 Download Invoice
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Tracking timeline */}
         <div className="lg:col-span-2">

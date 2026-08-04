@@ -8,6 +8,7 @@ import Reviews from '../components/Reviews'
 import LoadingSpinner from '../components/LoadingSpinner'
 import toast from 'react-hot-toast'
 import { resolveImageUrl } from '../utils/imageUrl'
+import { usePageMeta } from '../utils/usePageMeta'
 
 export default function ProductDetail() {
   const { id } = useParams()
@@ -19,6 +20,14 @@ export default function ProductDetail() {
   const [activeImage, setActiveImage] = useState(0)
   const { addItem } = useCart()
   const { isAdmin } = useAuth()
+
+  // Per-product SEO (title/description/og) once loaded
+  usePageMeta({
+    title: product ? product.name : undefined,
+    description: product ? `${product.name} — ${product.fabric || 'Silk'} saree. ${product.stock > 0 ? 'In stock' : 'Currently out of stock'}.` : undefined,
+    image: product?.image_url,
+    type: 'product',
+  })
 
   useEffect(() => {
     const fetchProduct = async () => {
@@ -181,6 +190,14 @@ export default function ProductDetail() {
                 <span className={`font-medium ${product.stock > 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {product.stock > 0 ? `${product.stock} available` : 'Out of stock'}
                 </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">SKU</span>
+                <span className="font-medium text-slate-800">JP-{String(product.id).padStart(4, '0')}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Delivery</span>
+                <span className="font-medium text-slate-800">🚚 5–7 days, FREE</span>
               </div>
             </div>
           </div>

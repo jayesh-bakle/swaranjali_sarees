@@ -33,6 +33,7 @@ export default function Admin() {
   const [stats, setStats] = useState(null)
   const [inventory, setInventory] = useState([])
   const [users, setUsers] = useState([])
+  const [coupons, setCoupons] = useState([])
   const [trend, setTrend] = useState([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -85,6 +86,10 @@ export default function Admin() {
       if (tab === 'overview') {
         const { data } = await API.get('/admin/revenue-trend')
         setTrend(data.trend)
+      }
+      if (tab === 'coupons') {
+        const { data } = await API.get('/coupons')
+        setCoupons(data.coupons)
       }
     } catch (err) {
       toast.error('Failed to load data')
@@ -295,6 +300,7 @@ export default function Admin() {
     { id: 'orders', label: '📋 Orders' },
     { id: 'inventory', label: '📉 Inventory' },
     { id: 'customers', label: '👥 Customers' },
+    { id: 'coupons', label: '🎟️ Coupons' },
   ]
 
   return (
@@ -584,6 +590,10 @@ export default function Admin() {
       {activeTab === 'customers' && (
         <CustomersPanel users={users} />
       )}
+
+      {activeTab === 'coupons' && (
+        <CouponsPanel coupons={coupons} onChanged={fetchTabData} />
+      )}
     </div>
   )
 }
@@ -852,6 +862,123 @@ function CustomersPanel({ users }) {
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  )
+}
+
+function CouponsPanel({ coupons = [], onChanged }) {
+  const [form, setForm] = useState({
+    code: '', discount_type: 'percent', discount_value: '', min_order_amount: '', max_discount_amount: '', usage_limit: ''
+  })
+  const [saving, setSaving] = useState(false)
+
+  const handleCreate = async (e) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await API.post('/coupons', form)
+      toast.success('Coupon created!')
+      setForm({ code: '', discount_type: 'percent', discount_value: '', min_order_amount: '', max_discount_amount: '', usage_limit: '' })
+      onChanged('coupons')
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to create coupon')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const toggleActive = async (coupon) => {
+    try {
+      await API.put(`/coupons/${coupon.id}`, { active: !coupon.active })
+      toast.success(coupon.active ? 'Coupon deactivated' : 'Coupon activated')
+      onChanged('coupons')
+    } catch (_) { toast.error('Update failed') }
+  }
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this coupon?')) return
+    try {
+      await API.delete(`/coupons/${id}`)
+      toast.success('Coupon deleted')
+      onChanged('coupons')
+    } catch (_) { toast.error('Delete failed') }
+  }
+
+  const input = 'input text-sm w-full'
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* Create coupon */}
+      <div className="bg-white rounded-xl shadow-soft p-6">
+        <h3 className="font-display text-lg font-semibold text-slate-900 mb-4">Create Coupon</h3>
+        <form onSubmit={handleCreate} className="space-y-3">
+          <div>
+            <label className="label">Code</label>
+            <input className={input} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="SUMMER20" required />
+          </div>
+          <div>
+            <label className="label">Discount Type</label>
+            <select className={input} value={form.discount_type} onChange={(e) => setForm({ ...form, discount_type: e.target.value })}>
+              <option value="percent">Percentage (%)</option>
+              <option value="flat">Flat Amount (₹)</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Discount Value</label>
+            <input className={input} type="number" min="1" value={form.discount_value} onChange={(e) => setForm({ ...form, discount_value: e.target.value })} placeholder="10" required />
+          </div>
+          <div>
+            <label className="label">Min Order (₹)</label>
+            <input className={input} type="number" min="0" value={form.min_order_amount} onChange={(e) => setForm({ ...form, min_order_amount: e.target.value })} placeholder="999" />
+          </div>
+          <div>
+            <label className="label">Max Discount (₹)</label>
+            <input className={input} type="number" min="0" value={form.max_discount_amount} onChange={(e) => setForm({ ...form, max_discount_amount: e.target.value })} placeholder="500" />
+          </div>
+          <div>
+            <label className="label">Usage Limit</label>
+            <input className={input} type="number" min="1" value={form.usage_limit} onChange={(e) => setForm({ ...form, usage_limit: e.target.value })} placeholder="e.g. 100 (blank = unlimited)" />
+          </div>
+          <button type="submit" disabled={saving} className="btn-primary w-full">
+            {saving ? 'Creating...' : '+ Create Coupon'}
+          </button>
+        </form>
+      </div>
+
+      {/* Coupon list */}
+      <div className="lg:col-span-2 bg-white rounded-xl shadow-soft p-6">
+        <h3 className="font-display text-lg font-semibold text-slate-900 mb-4">Active Coupons ({coupons.length})</h3>
+        {coupons.length === 0 ? (
+          <p className="text-sm text-slate-500 py-8 text-center">No coupons yet. Create your first one.</p>
+        ) : (
+          <div className="space-y-3">
+            {coupons.map((c) => (
+              <div key={c.id} className={`flex items-center justify-between border rounded-xl p-4 ${c.active ? 'border-slate-200' : 'border-slate-100 opacity-60'}`}>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900">{c.code}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-primary-100 text-primary-700 font-medium">
+                      {c.discount_type === 'percent' ? `${c.discount_value}% off` : `₹${c.discount_value} off`}
+                    </span>
+                    {!c.active && <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">Inactive</span>}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Min ₹{c.min_order_amount || 0} {c.max_discount_amount ? `· Max ₹${c.max_discount_amount}` : ''} {c.usage_limit ? `· ${c.used_count || 0}/${c.usage_limit} used` : `· ${c.used_count || 0} used`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => toggleActive(c)} className={`text-xs px-3 py-1.5 rounded-lg border font-medium ${c.active ? 'border-slate-200 text-slate-600 hover:bg-slate-50' : 'border-green-200 text-green-700 hover:bg-green-50'}`}>
+                    {c.active ? 'Deactivate' : 'Activate'}
+                  </button>
+                  <button onClick={() => handleDelete(c.id)} className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 font-medium">
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

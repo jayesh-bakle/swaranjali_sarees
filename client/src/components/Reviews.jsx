@@ -21,7 +21,15 @@ export default function Reviews({ productId }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [form, setForm] = useState({ rating: 5, title: '', comment: '' })
+  const [photoFiles, setPhotoFiles] = useState([])
+  const [photoPreviews, setPhotoPreviews] = useState([])
   const [submitting, setSubmitting] = useState(false)
+
+  const handlePhotoChange = (e) => {
+    const files = Array.from(e.target.files || []).slice(0, 3)
+    setPhotoFiles(files)
+    setPhotoPreviews(files.map((f) => URL.createObjectURL(f)))
+  }
 
   const fetchReviews = useCallback(async () => {
     setLoading(true)
@@ -46,9 +54,17 @@ export default function Reviews({ productId }) {
     if (submitting) return
     setSubmitting(true)
     try {
-      await API.post('/reviews', { product_id: productId, rating: form.rating, title: form.title, comment: form.comment })
+      const body = new FormData()
+      body.append('product_id', productId)
+      body.append('rating', form.rating)
+      body.append('title', form.title)
+      body.append('comment', form.comment)
+      photoFiles.forEach((f) => body.append('photos', f))
+      await API.post('/reviews', body, { headers: { 'Content-Type': 'multipart/form-data' } })
       toast.success('Thank you for your review!')
       setForm({ rating: 5, title: '', comment: '' })
+      setPhotoFiles([])
+      setPhotoPreviews([])
       fetchReviews()
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to submit review')
@@ -135,6 +151,21 @@ export default function Reviews({ productId }) {
             value={form.comment}
             onChange={(e) => setForm({ ...form, comment: e.target.value })}
           />
+          {/* Optional review photos (max 3) */}
+          <div className="mb-3 flex items-center gap-3 flex-wrap">
+            {photoPreviews.map((src, i) => (
+              <img key={i} src={src} alt={`Review photo ${i + 1}`} className="w-16 h-16 object-cover rounded-lg border border-slate-200" />
+            ))}
+            <label className="inline-flex items-center gap-1.5 text-xs font-medium text-primary-700 bg-primary-50 border border-primary-200 rounded-lg px-3 py-2 cursor-pointer hover:bg-primary-100 transition-colors">
+              📷 Add Photos
+              <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple className="hidden" onChange={handlePhotoChange} />
+            </label>
+            {photoFiles.length > 0 && (
+              <button type="button" onClick={() => { setPhotoFiles([]); setPhotoPreviews([]); }} className="text-xs text-slate-500 hover:text-red-600 font-medium">
+                Clear
+              </button>
+            )}
+          </div>
           <button type="submit" disabled={submitting} className="btn-primary">
             {submitting ? 'Submitting...' : myReview ? 'Update Review' : 'Submit Review'}
           </button>
@@ -174,6 +205,21 @@ export default function Reviews({ productId }) {
               </div>
               {review.title && <p className="font-medium text-slate-800 mt-2">{review.title}</p>}
               {review.comment && <p className="text-sm text-slate-600 mt-1 whitespace-pre-line">{review.comment}</p>}
+              {(() => {
+                try {
+                  const photos = JSON.parse(review.photos || '[]')
+                  if (!photos.length) return null
+                  return (
+                    <div className="flex gap-2 mt-3 flex-wrap">
+                      {photos.map((src, i) => (
+                        <a key={i} href={src} target="_blank" rel="noopener noreferrer">
+                          <img src={src} alt={`${review.user_name || 'Customer'}'s photo ${i + 1}`} className="w-20 h-20 object-cover rounded-lg border border-slate-200 hover:opacity-90 transition-opacity" loading="lazy" />
+                        </a>
+                      ))}
+                    </div>
+                  )
+                } catch (_) { return null }
+              })()}
             </li>
           ))}
         </ul>

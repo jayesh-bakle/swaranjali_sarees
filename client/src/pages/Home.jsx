@@ -3,8 +3,13 @@ import { Link } from 'react-router-dom'
 import API from '../api/client'
 import ProductCard from '../components/ProductCard'
 import LoadingSpinner from '../components/LoadingSpinner'
+import { usePageMeta } from '../utils/usePageMeta'
 
 export default function Home() {
+  usePageMeta({
+    title: 'Authentic Silk Sarees',
+    description: 'Shop authentic handwoven Paithani, Banarasi & Kanjivaram silk sarees from Yeola, Maharashtra. Free shipping across India.',
+  })
   const [featured, setFeatured] = useState([])
   const [latest, setLatest] = useState([])
   const [loading, setLoading] = useState(true)

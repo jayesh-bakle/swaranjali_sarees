@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Link } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
@@ -7,7 +8,9 @@ function formatPrice(price) {
   return `₹${Number(price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
 }
 
-export default function ProductCard({ product }) {
+// React.memo: a 50-product grid re-renders every card on each add-to-cart;
+// memo skips cards whose product prop is unchanged.
+const ProductCard = memo(function ProductCard({ product }) {
   const { addItem } = useCart()
   const { isAdmin } = useAuth()
 
@@ -37,6 +40,9 @@ export default function ProductCard({ product }) {
           )}
           {product.stock <= 0 && (
             <span className="bg-slate-800 text-white text-xs font-medium px-2.5 py-0.5 tracking-wide">SOLD OUT</span>
+          )}
+          {product.stock > 0 && product.stock <= 3 && (
+            <span className="bg-red-600 text-white text-xs font-medium px-2.5 py-0.5 tracking-wide">Only {product.stock} left</span>
           )}
         </div>
 
@@ -90,4 +96,6 @@ export default function ProductCard({ product }) {
       </Link>
     </div>
   )
-}
+})
+
+export default ProductCard
