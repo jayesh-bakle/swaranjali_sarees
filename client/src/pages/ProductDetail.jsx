@@ -18,6 +18,7 @@ export default function ProductDetail() {
   const [error, setError] = useState(false)
   const [quantity, setQuantity] = useState(1)
   const [activeImage, setActiveImage] = useState(0)
+  const [paused, setPaused] = useState(false)
   const { addItem } = useCart()
   const { isAdmin } = useAuth()
 
@@ -54,6 +55,23 @@ export default function ProductDetail() {
     fetchProduct()
   }, [id])
 
+  // All images for this product — computed here (above the early returns) so the
+  // auto-advance effect below can reference it safely even while product is null.
+  const imageUrl = product?.image_url ? resolveImageUrl(product.image_url) : ''
+  const images = product && Array.isArray(product.images) && product.images.length
+    ? product.images.map(resolveImageUrl)
+    : (imageUrl ? [imageUrl] : [])
+
+  // Auto-slide the gallery every 3.5s while there is more than one image.
+  // Paused while the user hovers/touches the gallery so they can look at a slide.
+  useEffect(() => {
+    if (images.length < 2 || paused) return
+    const timer = setInterval(() => {
+      setActiveImage((i) => (i + 1) % images.length)
+    }, 3500)
+    return () => clearInterval(timer)
+  }, [images.length, paused])
+
   if (loading) {
     return <LoadingSpinner text="Loading product..." fullPage />
   }
@@ -80,11 +98,6 @@ export default function ProductDetail() {
   const discount = product.sale_price && Number(product.price) > 0
     ? Math.round(((Number(product.price) - Number(product.sale_price)) / Number(product.price)) * 100)
     : 0
-
-  const imageUrl = resolveImageUrl(product.image_url)
-  const images = Array.isArray(product.images) && product.images.length
-    ? product.images.map(resolveImageUrl)
-    : [imageUrl]
 
   const handleAddToCart = () => {
     addItem(product, quantity)
@@ -122,8 +135,14 @@ export default function ProductDetail() {
                 ))}
               </div>
             )}
-            {/* Main image */}
-            <div className="relative flex-1 min-w-0">
+            {/* Main image — auto-slides every 3.5s; pauses on hover/touch */}
+            <div
+              className="relative flex-1 min-w-0"
+              onMouseEnter={() => setPaused(true)}
+              onMouseLeave={() => setPaused(false)}
+              onTouchStart={() => setPaused(true)}
+              onTouchEnd={() => setPaused(false)}
+            >
               <div className="rounded-2xl overflow-hidden shadow-card aspect-[3/4] bg-slate-100">
                 <img key={activeImage} src={images[activeImage] || imageUrl} alt={product.name} className="w-full h-full object-cover animate-fade-in" />
               </div>
@@ -138,9 +157,25 @@ export default function ProductDetail() {
                 </div>
               )}
               {images.length > 1 && (
-                <div className="absolute bottom-3 right-3 text-xs font-medium text-slate-700 bg-white/85 rounded-full px-2.5 py-0.5 shadow-sm">
-                  {activeImage + 1} / {images.length}
-                </div>
+                <>
+                  {/* Prev / next arrows */}
+                  <button
+                    type="button"
+                    onClick={() => setActiveImage((activeImage - 1 + images.length) % images.length)}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/85 shadow-md hover:bg-white flex items-center justify-center text-slate-700 text-2xl leading-none transition-colors"
+                    aria-label="Previous image"
+                  >‹</button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveImage((activeImage + 1) % images.length)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/85 shadow-md hover:bg-white flex items-center justify-center text-slate-700 text-2xl leading-none transition-colors"
+                    aria-label="Next image"
+                  >›</button>
+                  {/* Slide counter */}
+                  <div className="absolute bottom-3 right-3 text-xs font-medium text-slate-700 bg-white/85 rounded-full px-2.5 py-0.5 shadow-sm">
+                    {activeImage + 1} / {images.length}
+                  </div>
+                </>
               )}
             </div>
           </div>
