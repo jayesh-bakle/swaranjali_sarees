@@ -60,7 +60,7 @@ const sendPasswordResetEmail = async ({ email, resetToken }) => {
   const transport = getTransporter();
   if (!transport || !email) return false;
 
-  const baseUrl = (process.env.FRONTEND_URL || 'https://jagmohini-paithani.onrender.com').replace(/\/$/, '');
+  const baseUrl = (process.env.FRONTEND_URL || 'https://swaranjali-client.onrender.com').replace(/\/$/, '');
   const resetLink = `${baseUrl}/reset-password?token=${resetToken}`;
 
   try {
